@@ -148,7 +148,7 @@ async function readLoop() {
                         } else {
                             appendTextLine('Checksum error');
                             // show offending message in hex for diagnostics
-                            appendHex(buffer.slice(startIdx, totalNeeded));
+                            //appendHex(buffer.slice(startIdx, totalNeeded));
                         }
                     } // else ignore this message
 
