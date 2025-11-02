@@ -124,29 +124,31 @@ async function readLoop() {
                     if (buffer.length < totalNeeded) break; // wait for full message
 
                     // extract payload (len bytes)
-                    const payload = buffer.slice(startIdx + 3, startIdx + 3 + len);
+                    const dataPart = buffer.slice(startIdx + 2, startIdx + 2 + len - 2); // includes command, payload, checksum
 
-                    // payload must be at least 2 bytes: checksum(2 bytes)
-                    if (len >= 2 && buffer[startIdx + 2] === 0x01) {
+                    // payload must be at least 3 bytes: command and checksum(2 bytes)
+                    if (len >= 3 && buffer[startIdx + 2] === 0x01) {
+                        const payload = buffer.slice(startIdx + 3, startIdx + 3 + len - 2);
                         // Split data (without checksum) and checksum bytes
-                        const dataPart = payload.slice(0, payload.length - 2); // includes payload[0]==0x01
-                        const chkHigh = payload[payload.length - 2];
-                        const chkLow = payload[payload.length - 1];
+                        const chkHigh = buffer[startIdx + 2 + len - 2];
+                        const chkLow = buffer[startIdx + 2 + len - 1];
                         const expected = (chkHigh << 8) | chkLow;
                         const actual = computeChecksum(dataPart);
-                        console.log('Checksum actual=', actual, 'expected=', expected);
+                        //console.log('Checksum actual=', actual, 'expected=', expected);
+                        //appendHex(buffer.slice(startIdx, totalNeeded));
                         if (actual === expected) {
                             // parseMessage expects payload-like buffer starting at index 0 (marker at [0])
-                            const status = parseMessage(dataPart, 0);
+                            const status = parseMessage(payload, 0);
                             if (status) {
                                 appendTextLine(JSON.stringify(status));
                                 // also show raw message hex if desired:
-                                // appendHex(buffer.slice(startIdx, totalNeeded));
                             } else {
                                 appendTextLine('parseMessage: invalid/too short');
                             }
                         } else {
-                            appendTextLine('Checksum error');
+                            const actualHex = '0x' + actual.toString(16).padStart(4, '0').toUpperCase();
+                            const expectedHex = '0x' + expected.toString(16).padStart(4, '0').toUpperCase();
+                            appendTextLine(`Checksum actual= ${actualHex}, expected= ${expectedHex}`);
                             // show offending message in hex for diagnostics
                             //appendHex(buffer.slice(startIdx, totalNeeded));
                         }
@@ -317,42 +319,42 @@ disconnectBtn.addEventListener('click', disconnect);
  */
 
 function parseMessage(buf, startOffset = 0, littleEndian = true) {
-  const p = buf instanceof Uint8Array ? buf : Uint8Array.from(buf);
-  const STRUCT_SIZE = 40; // adjust if your C++ sizeof(status_payload) differs
-  if (p.length < startOffset + STRUCT_SIZE) return null;
+    const p = buf instanceof Uint8Array ? buf : Uint8Array.from(buf);
+    const STRUCT_SIZE = 40; // adjust if your C++ sizeof(status_payload) differs
+    if (p.length < startOffset + STRUCT_SIZE) return null;
 
-  const dv = new DataView(p.buffer, p.byteOffset + startOffset, STRUCT_SIZE);
-  let off = 0;
+    const dv = new DataView(p.buffer, p.byteOffset + startOffset, STRUCT_SIZE);
+    let off = 0;
 
-  const id = dv.getUint16(off, littleEndian); off += 2;
-  const sync_id = dv.getUint16(off, littleEndian); off += 2;
-  const time_offset_ms = dv.getInt16(off, littleEndian); off += 2;
+    const id = dv.getUint16(off, littleEndian); off += 2;
+    const sync_id = dv.getUint16(off, littleEndian); off += 2;
+    const time_offset_ms = dv.getInt16(off, littleEndian); off += 2;
 
-  // skip 2 bytes padding to align the next double to 8 bytes
-  off += 2;
+    // skip 2 bytes padding to align the next double to 8 bytes
+    off += 2;
 
-  const latitude = dv.getFloat64(off, littleEndian); off += 8;
-  const longitude = dv.getFloat64(off, littleEndian); off += 8;
-  const heading = dv.getFloat32(off, littleEndian); off += 4;
-  const cov_pos = dv.getFloat32(off, littleEndian); off += 4;
-  const speed_x = dv.getInt16(off, littleEndian); off += 2;
-  const speed_y = dv.getInt16(off, littleEndian); off += 2;
-  const rot_speed = dv.getInt16(off, littleEndian); off += 2;
-  const drive_mode = dv.getUint8(off); off += 1;
-  const aux_data_status = dv.getUint8(off); off += 1;
+    const latitude = dv.getFloat64(off, littleEndian); off += 8;
+    const longitude = dv.getFloat64(off, littleEndian); off += 8;
+    const heading = dv.getFloat32(off, littleEndian); off += 4;
+    const cov_pos = dv.getFloat32(off, littleEndian); off += 4;
+    const speed_x = dv.getInt16(off, littleEndian); off += 2;
+    const speed_y = dv.getInt16(off, littleEndian); off += 2;
+    const rot_speed = dv.getInt16(off, littleEndian); off += 2;
+    const drive_mode = dv.getUint8(off); off += 1;
+    const aux_data_status = dv.getUint8(off); off += 1;
 
-  return {
-    id,
-    sync_id,
-    time_offset_ms,
-    latitude,
-    longitude,
-    heading,
-    cov_pos,
-    speed_x,
-    speed_y,
-    rot_speed,
-    drive_mode,
-    aux_data_status
-  };
+    return {
+        id,
+        sync_id,
+        time_offset_ms,
+        latitude,
+        longitude,
+        heading,
+        cov_pos,
+        speed_x,
+        speed_y,
+        rot_speed,
+        drive_mode,
+        aux_data_status
+    };
 }
