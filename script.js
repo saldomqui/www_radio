@@ -22,7 +22,9 @@ let runSent = false;
 function setStatus(s) { if (statusEl) statusEl.textContent = 'status: ' + s; }
 
 function appendHex(bytes) {
-    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    // bytes can be Uint8Array or Array<number>
+    const arr = Array.from(bytes);
+    const hex = arr.map(b => b.toString(16).padStart(2, '0')).join(' ');
     const line = document.createElement('div');
     line.textContent = hex;
     logEl.appendChild(line);
@@ -77,14 +79,51 @@ async function readUntil(substring, timeoutMs = 5000) {
     }
 }
 
+// NEW: message-oriented read loop
+// Message format: 0xFF, <len:1>, <payload: len bytes>
+// Only append a message to console if payload[0] === 0x01
 async function readLoop() {
+    const buffer = []; // accumulate incoming bytes (numbers 0-255)
     try {
         while (keepReading && reader) {
             const { value, done } = await reader.read();
             if (done) break;
             if (value && value.length) {
-                // always print hex
-                appendHex(value);
+                // append incoming bytes to buffer
+                for (const b of value) buffer.push(b);
+
+                // parse messages while possible
+                while (true) {
+                    // find start byte 0xFF
+                    const startIdx = buffer.indexOf(0xFF);
+                    if (startIdx === -1) {
+                        // no start byte, discard old data to avoid unbounded growth
+                        if (buffer.length > 1024) buffer.splice(0, buffer.length - 512);
+                        break;
+                    }
+
+                    // ensure we have at least start + length byte
+                    if (buffer.length < startIdx + 2) break;
+
+                    const len = buffer[startIdx + 1]; // length byte
+                    const totalNeeded = startIdx + 2 + len;
+                    if (buffer.length < totalNeeded) break; // wait for full message
+
+                    // extract payload
+                    const payload = buffer.slice(startIdx + 2, startIdx + 2 + len);
+
+                    // If the byte after the length (first payload byte) is 0x01, append payload (or whole message)
+                    if (payload.length > 0 && payload[0] === 0x01) {
+                        // Append the full message (header+len+payload) in hex for visibility
+                        const fullMsg = buffer.slice(startIdx, totalNeeded);
+                        appendHex(fullMsg);
+                        appendTextLine("-> matched (payload[0]==0x01)");
+                    } // else ignore this message
+
+                    // remove consumed bytes up to end of this message
+                    buffer.splice(0, totalNeeded);
+                    // continue parsing any further messages in buffer
+                } // end inner parse loop
             }
         }
     } catch (err) {
@@ -185,10 +224,10 @@ async function connect() {
             appendTextLine('Device initialized');
         }
 
-        // 5) start continuous read loop (hex output)
+        // 5) start continuous read loop (message-oriented)
         keepReading = true;
         reader = port.readable.getReader();
-        setStatus('running - streaming hex');
+        setStatus('running - streaming hex messages');
         readLoop();
     } catch (err) {
         console.error(err);
