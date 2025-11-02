@@ -134,7 +134,7 @@ async function readLoop() {
                         const chkLow = payload[payload.length - 1];
                         const expected = (chkHigh << 8) | chkLow;
                         const actual = computeChecksum(dataPart);
-
+                        console.log('Checksum actual=', actual, 'expected=', expected);
                         if (actual === expected) {
                             // parseMessage expects payload-like buffer starting at index 0 (marker at [0])
                             const status = parseMessage(dataPart);
