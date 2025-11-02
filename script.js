@@ -116,8 +116,8 @@ async function readLoop() {
                     if (payload.length > 0 && payload[0] === 0x01) {
                         // Append the full message (header+len+payload) in hex for visibility
                         const fullMsg = buffer.slice(startIdx, totalNeeded);
+                        appendTextLine("-> ROBOT STATUS)");
                         appendHex(fullMsg);
-                        appendTextLine("-> matched (payload[0]==0x01)");
                     } // else ignore this message
 
                     // remove consumed bytes up to end of this message
