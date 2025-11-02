@@ -328,16 +328,17 @@ function parseMessage(payload) {
     const id = dv.getUint16(off, true); off += 2;
     const sync_id = dv.getUint16(off, true); off += 2;
     const time_offset_ms = dv.getInt16(off, true); off += 2;
-    const latitude = dv.getFloat64(off, false); off += 8;
-    const longitude = dv.getFloat64(off, false); off += 8;
-    const heading = dv.getFloat32(off, false); off += 4;
-    const cov_pos = dv.getFloat32(off, false); off += 4;
+    const latitude = dv.getFloat64(off, true); off += 8;
+    const longitude = dv.getFloat64(off, true); off += 8;
+    const heading = dv.getFloat32(off, true); off += 4;
+    const cov_pos = dv.getFloat32(off, true); off += 4;
     const speed_x = dv.getInt16(off, true); off += 2;
     const speed_y = dv.getInt16(off, true); off += 2;
     const rot_speed = dv.getInt16(off, true); off += 2;
     const drive_mode = dv.getUint8(off); off += 1;
     const aux_data_status = dv.getUint8(off); off += 1;
 
+    console.log('lat:', latitude, 'lon:', longitude);
     return {
         id,
         sync_id,
