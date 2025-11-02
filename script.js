@@ -221,7 +221,7 @@ async function disconnect() {
     } finally {
         connectBtn.disabled = false;
         disconnectBtn.disabled = true;
-        deviceNameEl.textContent = '/dev/ttyRadio0 (user pick)';
+        deviceNameEl.textContent = '/dev/ttyUSB0 (user pick)';
     }
 }
 
