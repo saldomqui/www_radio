@@ -79,9 +79,23 @@ async function readUntil(substring, timeoutMs = 5000) {
     }
 }
 
+/**
+ * Compute simple 16-bit checksum as sum of bytes modulo 65536.
+ * Accepts Array<number> or Uint8Array.
+ */
+function computeChecksum(bytes) {
+    const arr = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+    let sum = 0;
+    for (let i = 0; i < arr.length; ++i) {
+        sum = (sum + arr[i]) & 0xFFFF;
+    }
+    return sum;
+}
+
 // NEW: message-oriented read loop
 // Message format: 0xFF, <len:1>, <payload: len bytes>
-// Only append a message to console if payload[0] === 0x01
+// payload layout: payload[0] == 0x01, payload[1..] = data, last two bytes of payload are checksum (high, low)
+// Only append a message to console if payload[0] === 0x01 and checksum matches
 async function readLoop() {
     const buffer = []; // accumulate incoming bytes (numbers 0-255)
     try {
@@ -109,15 +123,33 @@ async function readLoop() {
                     const totalNeeded = startIdx + 2 + len;
                     if (buffer.length < totalNeeded) break; // wait for full message
 
-                    // extract payload
+                    // extract payload (len bytes)
                     const payload = buffer.slice(startIdx + 2, startIdx + 2 + len);
 
-                    // If the byte after the length (first payload byte) is 0x01, append payload (or whole message)
-                    if (payload.length > 0 && payload[0] === 0x01) {
-                        // Append the full message (header+len+payload) in hex for visibility
-                        const fullMsg = buffer.slice(startIdx, totalNeeded);
-                        appendTextLine("-> ROBOT STATUS)");
-                        appendHex(fullMsg);
+                    // payload must be at least 3 bytes: marker(0x01) + ... + checksum(2 bytes)
+                    if (payload.length >= 3 && payload[0] === 0x01) {
+                        // Split data (without checksum) and checksum bytes
+                        const dataPart = payload.slice(0, payload.length - 2); // includes payload[0]==0x01
+                        const chkHigh = payload[payload.length - 2];
+                        const chkLow = payload[payload.length - 1];
+                        const expected = (chkHigh << 8) | chkLow;
+                        const actual = computeChecksum(dataPart);
+
+                        if (actual === expected) {
+                            // parseMessage expects payload-like buffer starting at index 0 (marker at [0])
+                            const status = parseMessage(dataPart);
+                            if (status) {
+                                appendTextLine(JSON.stringify(status));
+                                // also show raw message hex if desired:
+                                // appendHex(buffer.slice(startIdx, totalNeeded));
+                            } else {
+                                appendTextLine('parseMessage: invalid/too short');
+                            }
+                        } else {
+                            appendTextLine('Checksum error');
+                            // show offending message in hex for diagnostics
+                            appendHex(buffer.slice(startIdx, totalNeeded));
+                        }
                     } // else ignore this message
 
                     // remove consumed bytes up to end of this message
@@ -133,6 +165,7 @@ async function readLoop() {
         try { reader && reader.releaseLock(); } catch (e) { }
     }
 }
+
 
 async function connect() {
     if (!('serial' in navigator)) {
@@ -275,3 +308,48 @@ disconnectBtn.addEventListener('click', disconnect);
         if (ports.length > 0) deviceNameEl.textContent = 'port available (click Connect)';
     } catch (e) { /* ignore */ }
 })();
+
+
+/**
+ * Parse a status message payload.
+ * Expects payload[0] === 0x01, then struct starts at payload[1].
+ * Returns an object matching the C++ struct or null on error/too short.
+ */
+function parseMessage(payload) {
+    // accept Array<number> or Uint8Array
+    const p = payload instanceof Uint8Array ? payload : Uint8Array.from(payload);
+    const STRUCT_SIZE = 2 + 2 + 2 + 8 + 8 + 4 + 4 + 2 + 2 + 2 + 1 + 1; // 38
+    if (p.length < 1 + STRUCT_SIZE) return null;
+    if (p[0] !== 0x01) return null;
+
+    // DataView over the bytes starting at payload[1]
+    const dv = new DataView(p.buffer, p.byteOffset + 1, STRUCT_SIZE);
+    let off = 0;
+    const id = dv.getUint16(off, true); off += 2;
+    const sync_id = dv.getUint16(off, true); off += 2;
+    const time_offset_ms = dv.getInt16(off, true); off += 2;
+    const latitude = dv.getFloat64(off, true); off += 8;
+    const longitude = dv.getFloat64(off, true); off += 8;
+    const heading = dv.getFloat32(off, true); off += 4;
+    const cov_pos = dv.getFloat32(off, true); off += 4;
+    const speed_x = dv.getInt16(off, true); off += 2;
+    const speed_y = dv.getInt16(off, true); off += 2;
+    const rot_speed = dv.getInt16(off, true); off += 2;
+    const drive_mode = dv.getUint8(off); off += 1;
+    const aux_data_status = dv.getUint8(off); off += 1;
+
+    return {
+        id,
+        sync_id,
+        time_offset_ms,
+        latitude,
+        longitude,
+        heading,
+        cov_pos,
+        speed_x,
+        speed_y,
+        rot_speed,
+        drive_mode,
+        aux_data_status
+    };
+}
