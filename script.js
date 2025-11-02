@@ -322,62 +322,34 @@ function parseMessage(payload) {
     if (p.length < 1 + STRUCT_SIZE) return null;
     if (p[0] !== 0x01) return null;
 
-    // helper to read all fields with specified endianness
-    function readAll(littleEndian) {
-        const dv = new DataView(p.buffer, p.byteOffset + 1, STRUCT_SIZE);
-        let off = 0;
-        const id = dv.getUint16(off, littleEndian); off += 2;
-        const sync_id = dv.getUint16(off, littleEndian); off += 2;
-        const time_offset_ms = dv.getInt16(off, littleEndian); off += 2;
-        const latitude = dv.getFloat64(off, littleEndian); off += 8;
-        const longitude = dv.getFloat64(off, littleEndian); off += 8;
-        const heading = dv.getFloat32(off, littleEndian); off += 4;
-        const cov_pos = dv.getFloat32(off, littleEndian); off += 4;
-        const speed_x = dv.getInt16(off, littleEndian); off += 2;
-        const speed_y = dv.getInt16(off, littleEndian); off += 2;
-        const rot_speed = dv.getInt16(off, littleEndian); off += 2;
-        const drive_mode = dv.getUint8(off); off += 1;
-        const aux_data_status = dv.getUint8(off); off += 1;
+    // DataView over the bytes starting at payload[1]
+    const dv = new DataView(p.buffer, p.byteOffset + 1, STRUCT_SIZE);
+    let off = 0;
+    const id = dv.getUint16(off, true); off += 2;
+    const sync_id = dv.getUint16(off, true); off += 2;
+    const time_offset_ms = dv.getInt16(off, true); off += 2;
+    const latitude = dv.getFloat64(off, false); off += 8;
+    const longitude = dv.getFloat64(off, false); off += 8;
+    const heading = dv.getFloat32(off, false); off += 4;
+    const cov_pos = dv.getFloat32(off, false); off += 4;
+    const speed_x = dv.getInt16(off, true); off += 2;
+    const speed_y = dv.getInt16(off, true); off += 2;
+    const rot_speed = dv.getInt16(off, true); off += 2;
+    const drive_mode = dv.getUint8(off); off += 1;
+    const aux_data_status = dv.getUint8(off); off += 1;
 
-        return {
-            id,
-            sync_id,
-            time_offset_ms,
-            latitude,
-            longitude,
-            heading,
-            cov_pos,
-            speed_x,
-            speed_y,
-            rot_speed,
-            drive_mode,
-            aux_data_status,
-            _endianness_little: littleEndian
-        };
-    }
-
-    // try little-endian first (previous behavior)
-    const vLE = readAll(true);
-    const latLE = vLE.latitude;
-    const lonLE = vLE.longitude;
-    const latOK_LE = Number.isFinite(latLE) && latLE >= -90 && latLE <= 90;
-    const lonOK_LE = Number.isFinite(lonLE) && lonLE >= -180 && lonLE <= 180;
-
-    if (latOK_LE && lonOK_LE) {
-        return vLE;
-    }
-
-    // try big-endian
-    const vBE = readAll(false);
-    const latBE = vBE.latitude;
-    const lonBE = vBE.longitude;
-    const latOK_BE = Number.isFinite(latBE) && latBE >= -90 && latBE <= 90;
-    const lonOK_BE = Number.isFinite(lonBE) && lonBE >= -180 && lonBE <= 180;
-
-    if (latOK_BE && lonOK_BE) {
-        return vBE;
-    }
-
-    // neither produced valid lat/lon; return little-endian result as fallback
-    return vLE;
+    return {
+        id,
+        sync_id,
+        time_offset_ms,
+        latitude,
+        longitude,
+        heading,
+        cov_pos,
+        speed_x,
+        speed_y,
+        rot_speed,
+        drive_mode,
+        aux_data_status
+    };
 }
