@@ -124,10 +124,10 @@ async function readLoop() {
                     if (buffer.length < totalNeeded) break; // wait for full message
 
                     // extract payload (len bytes)
-                    const payload = buffer.slice(startIdx + 2, startIdx + 2 + len);
+                    const payload = buffer.slice(startIdx + 3, startIdx + 3 + len);
 
-                    // payload must be at least 3 bytes: marker(0x01) + ... + checksum(2 bytes)
-                    if (payload.length >= 3 && payload[0] === 0x01) {
+                    // payload must be at least 2 bytes: checksum(2 bytes)
+                    if (len >= 2 && buffer[startIdx + 2] === 0x01) {
                         // Split data (without checksum) and checksum bytes
                         const dataPart = payload.slice(0, payload.length - 2); // includes payload[0]==0x01
                         const chkHigh = payload[payload.length - 2];
@@ -137,7 +137,7 @@ async function readLoop() {
                         console.log('Checksum actual=', actual, 'expected=', expected);
                         if (actual === expected) {
                             // parseMessage expects payload-like buffer starting at index 0 (marker at [0])
-                            const status = parseMessage(dataPart, 1);
+                            const status = parseMessage(dataPart, 0);
                             if (status) {
                                 appendTextLine(JSON.stringify(status));
                                 // also show raw message hex if desired:
