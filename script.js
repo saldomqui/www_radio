@@ -315,51 +315,8 @@ disconnectBtn.addEventListener('click', disconnect);
  * Expects payload[0] === 0x01, then struct starts at payload[1].
  * Returns an object matching the C++ struct or null on error/too short.
  */
-function parseMessage(payload) {
-    // accept Array<number> or Uint8Array
-    const p = payload instanceof Uint8Array ? payload : Uint8Array.from(payload);
-    const STRUCT_SIZE = 2 + 2 + 2 + 8 + 8 + 4 + 4 + 2 + 2 + 2 + 1 + 1; // 38
-    if (p.length < 1 + STRUCT_SIZE) return null;
-    if (p[0] !== 0x01) return null;
 
-    // DataView over the bytes starting at payload[1]
-    const dv = new DataView(p.buffer, p.byteOffset + 1, STRUCT_SIZE);
-    let off = 0;
-    const id = dv.getUint16(off, true); off += 2;
-    const sync_id = dv.getUint16(off, true); off += 2;
-    const time_offset_ms = dv.getInt16(off, true); off += 2;
-    const latitude = dv.getFloat64(off, true); off += 8;
-    const longitude = dv.getFloat64(off, true); off += 8;
-    const heading = dv.getFloat32(off, true); off += 4;
-    const cov_pos = dv.getFloat32(off, true); off += 4;
-    const speed_x = dv.getInt16(off, true); off += 2;
-    const speed_y = dv.getInt16(off, true); off += 2;
-    const rot_speed = dv.getInt16(off, true); off += 2;
-    const drive_mode = dv.getUint8(off); off += 1;
-    const aux_data_status = dv.getUint8(off); off += 1;
-
-    console.log('lat:', latitude, 'lon:', longitude);
-    return {
-        id,
-        sync_id,
-        time_offset_ms,
-        latitude,
-        longitude,
-        heading,
-        cov_pos,
-        speed_x,
-        speed_y,
-        rot_speed,
-        drive_mode,
-        aux_data_status
-    };
-}
-
-// Convert raw bytes (like memcpy from C++) into a JS object matching status_payload.
-// buf: Uint8Array or Array<number>
-// startOffset: offset in buf where the C struct begins (default 0)
-// littleEndian: true for typical little-endian platforms
-function getPayloadFromBuffer(buf, startOffset = 0, littleEndian = true) {
+function parseMessage(buf, startOffset = 0, littleEndian = true) {
   const p = buf instanceof Uint8Array ? buf : Uint8Array.from(buf);
   const STRUCT_SIZE = 40; // adjust if your C++ sizeof(status_payload) differs
   if (p.length < startOffset + STRUCT_SIZE) return null;
