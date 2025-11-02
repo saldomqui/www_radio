@@ -315,42 +315,91 @@ disconnectBtn.addEventListener('click', disconnect);
  * Expects payload[0] === 0x01, then struct starts at payload[1].
  * Returns an object matching the C++ struct or null on error/too short.
  */
+// Replace the previous parseMessage with this resilient parser that tries different
+// alignment/padding offsets and endianness to locate the struct fields.
+// Returns parsed object or null. Adds _offset and _little_endian hints for debugging.
 function parseMessage(payload) {
-    // accept Array<number> or Uint8Array
     const p = payload instanceof Uint8Array ? payload : Uint8Array.from(payload);
-    const STRUCT_SIZE = 2 + 2 + 2 + 8 + 8 + 4 + 4 + 2 + 2 + 2 + 1 + 1; // 38
-    if (p.length < 1 + STRUCT_SIZE) return null;
-    if (p[0] !== 0x01) return null;
+    // payload[0] is marker (0x01). struct bytes start somewhere after that (possible padding).
+    if (p.length < 1 + 4) return null; // too small to be meaningful
 
-    // DataView over the bytes starting at payload[1]
-    const dv = new DataView(p.buffer, p.byteOffset + 1, STRUCT_SIZE);
-    let off = 0;
-    const id = dv.getUint16(off, true); off += 2;
-    const sync_id = dv.getUint16(off, true); off += 2;
-    const time_offset_ms = dv.getInt16(off, true); off += 2;
-    const latitude = dv.getFloat64(off, false); off += 8;
-    const longitude = dv.getFloat64(off, false); off += 8;
-    const heading = dv.getFloat32(off, true); off += 4;
-    const cov_pos = dv.getFloat32(off, true); off += 4;
-    const speed_x = dv.getInt16(off, true); off += 2;
-    const speed_y = dv.getInt16(off, true); off += 2;
-    const rot_speed = dv.getInt16(off, true); off += 2;
-    const drive_mode = dv.getUint8(off); off += 1;
-    const aux_data_status = dv.getUint8(off); off += 1;
+    const STRUCT_SIZE = 2 + 2 + 2 + 8 + 8 + 4 + 4 + 2 + 2 + 2 + 1 + 1; // 38 bytes
+    // helper to attempt parse at a given offset and endianness
+    function tryAt(offset, little) {
+        const start = 1 + offset; // skip marker
+        if (p.length < start + STRUCT_SIZE) return null;
+        const dv = new DataView(p.buffer, p.byteOffset + start, STRUCT_SIZE);
+        let off = 0;
+        try {
+            const id = dv.getUint16(off, little); off += 2;
+            const sync_id = dv.getUint16(off, little); off += 2;
+            const time_offset_ms = dv.getInt16(off, little); off += 2;
+            const latitude = dv.getFloat64(off, little); off += 8;
+            const longitude = dv.getFloat64(off, little); off += 8;
+            const heading = dv.getFloat32(off, little); off += 4;
+            const cov_pos = dv.getFloat32(off, little); off += 4;
+            const speed_x = dv.getInt16(off, little); off += 2;
+            const speed_y = dv.getInt16(off, little); off += 2;
+            const rot_speed = dv.getInt16(off, little); off += 2;
+            const drive_mode = dv.getUint8(off); off += 1;
+            const aux_data_status = dv.getUint8(off); off += 1;
 
-    console.log('lat:', latitude, 'lon:', longitude);
-    return {
-        id,
-        sync_id,
-        time_offset_ms,
-        latitude,
-        longitude,
-        heading,
-        cov_pos,
-        speed_x,
-        speed_y,
-        rot_speed,
-        drive_mode,
-        aux_data_status
-    };
+            return {
+                id,
+                sync_id,
+                time_offset_ms,
+                latitude,
+                longitude,
+                heading,
+                cov_pos,
+                speed_x,
+                speed_y,
+                rot_speed,
+                drive_mode,
+                aux_data_status,
+                _offset: offset,
+                _little_endian: !!little
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // scoring function: prefer candidates with valid lat/lon and sensible ranges
+    function scoreCandidate(c) {
+        if (!c) return -1000;
+        let score = 0;
+        if (!Number.isFinite(c.latitude) || !Number.isFinite(c.longitude)) return -1000;
+        if (c.latitude >= -90 && c.latitude <= 90) score += 50;
+        if (c.longitude >= -180 && c.longitude <= 180) score += 50;
+        // heading in radians: prefer within -2pi..2pi
+        if (Number.isFinite(c.heading) && c.heading > -7 && c.heading < 7) score += 5;
+        // cov_pos non-negative and not absurd
+        if (Number.isFinite(c.cov_pos) && c.cov_pos >= 0 && c.cov_pos < 1e6) score += 5;
+        // speed reasonable
+        if (Math.abs(c.speed_x) < 200000 && Math.abs(c.speed_y) < 200000) score += 2;
+        // id smallish
+        if (c.id > 0 && c.id < 10000) score += 2;
+        return score;
+    }
+
+    let best = null;
+    let bestScore = -Infinity;
+    // try offsets 0..8 (8 bytes of possible padding) and both endiannesses
+    for (let offset = 0; offset <= 8; ++offset) {
+        for (const little of [true, false]) {
+            const cand = tryAt(offset, little);
+            const sc = scoreCandidate(cand);
+            // small debug log - uncomment if you need console traces
+            // console.log('try offset', offset, 'little', little, 'score', sc, cand ? {lat:cand.latitude,lon:cand.longitude} : null);
+            if (sc > bestScore) {
+                bestScore = sc;
+                best = cand;
+            }
+        }
+    }
+
+    // require a positive score to accept (i.e. lat/lon plausible)
+    if (best && bestScore > 0) return best;
+    return null;
 }
