@@ -368,9 +368,9 @@ function renderStatusDetailsHtml(s) {
     const lon = Number.isFinite(s.longitude) ? s.longitude.toFixed(6) : 'N/A';
     const heading = Number.isFinite(s.heading) ? s.heading.toFixed(3) : 'N/A';
     const cov = Number.isFinite(s.cov_pos) ? s.cov_pos.toFixed(3) : 'N/A';
-    const spdX = (typeof s.speed_x !== 'undefined') ? s.speed_x : 'N/A';
-    const spdY = (typeof s.speed_y !== 'undefined') ? s.speed_y : 'N/A';
-    const rot = (typeof s.rot_speed !== 'undefined') ? s.rot_speed : 'N/A';
+    const spdX = (typeof s.speed_x !== 'undefined') ? s.speed_x.toFixed(2) : 'N/A';
+    const spdY = (typeof s.speed_y !== 'undefined') ? s.speed_y.toFixed(2) : 'N/A';
+    const rot = (typeof s.rot_speed !== 'undefined') ? s.rot_speed.toFixed(2) : 'N/A';
     const sync = (typeof s.sync_id !== 'undefined') ? s.sync_id : 'N/A';
     const time_off = (typeof s.time_offset_ms !== 'undefined') ? s.time_offset_ms : 'N/A';
     const drive_mode_hex = '0x' + (Number(s.drive_mode) || 0).toString(16).padStart(2, '0').toUpperCase();
@@ -607,8 +607,8 @@ function updateMapMarker(s) {
       sync: ${s.sync_id} &nbsp; t_off: ${s.time_offset_ms} ms<br/>
       lat: ${lat.toFixed(6)}<br/>lon: ${lon.toFixed(6)}<br/>
       hdg: ${s.heading?.toFixed(3) ?? 'N/A'} rad<br/>
-      cov: ${s.cov_pos ?? 'N/A'}<br/>
-      spdX: ${s.speed_x ?? 'N/A'} mm/s
+      cov: ${s.cov_pos.toFixed(2) ?? 'N/A'}<br/>
+      spdX: ${s.speed_x.toFixed(2) ?? 'N/A'} mm/s
     `;
     popup.setContent(popupHtml);
   } else {
