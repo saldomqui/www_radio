@@ -18,9 +18,11 @@ header {
 }
 
 main {
-    padding: 10px;
+    padding: 0;              /* map should fill main, no extra padding */
     flex: 1;
-    overflow: auto;
+    overflow: hidden;        /* let map handle its own scrolling */
+    position: relative;      /* so #map absolute is contained inside main */
+    margin-right: 224px;     /* reserve space for the right tree (tree width + gap) */
 }
 
 /* full-size map inside main */
@@ -109,5 +111,5 @@ input[type="number"] {
 
 /* ensure main area doesn't hide behind the sidebar on smaller screens */
 @media (min-width: 820px) {
-    main { margin-right: 220px; }
+    main { margin-right: 224px; }
 }
