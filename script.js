@@ -72,9 +72,8 @@ function computeChecksum(bytes) {
 }
 
 // NEW: message-oriented read loop
-// Message format: 0xFF, <len:1>, <payload: len bytes>
-// payload layout: payload[0] == 0x01, payload[1..] = data, last two bytes of payload are checksum (high, low)
-// Only append a message to console if payload[0] === 0x01 and checksum matches
+// Message format: 0xFF, <len:1>, <cmd:1>, <payload: len - 3>, <checksum:2>
+// Only append a message to console if cmd === 0x01 and checksum matches
 async function readLoop() {
   const buffer = []; // accumulate incoming bytes (numbers 0-255)
   try {
@@ -104,34 +103,36 @@ async function readLoop() {
         if (buffer.length < totalNeeded) break; // wait for full message
 
         // extract full payload (len bytes)
-        const payloadFull = buffer.slice(startIdx + 2, startIdx + 2 + len);
+        const msgData = buffer.slice(startIdx + 2, startIdx + 2 + len);
+
+        const cmd = msgData[0]; // command byte
 
         // payload must be at least 3 bytes: marker + checksum(2)
-        if (payloadFull.length >= 3 && payloadFull[0] === 0x01) {
-          // data to checksum = payloadFull[0 .. len-3] (i.e. excluding last two checksum bytes)
-          const dataPart = payloadFull.slice(0, payloadFull.length - 2);
-          const chkHigh = payloadFull[payloadFull.length - 2];
-          const chkLow = payloadFull[payloadFull.length - 1];
+        if (msgData.length >= 3 && cmd === 0x01) {
+          // data to checksum = msgData[0 .. len-3] (i.e. excluding last two checksum bytes)
+          const payloadSegment = msgData.slice(0, msgData.length - 2);
+          const chkHigh = msgData[msgData.length - 2];
+          const chkLow = msgData[msgData.length - 1];
           const expected = (chkHigh << 8) | chkLow;
-          const actual = computeChecksum(dataPart);
+          const actual = computeChecksum(payloadSegment);
 
           if (actual === expected) {
-            // dataPart[0] == 0x01 (marker). The C struct bytes start at dataPart[1].
+            // payloadSegment[0] == 0x01 (marker). The C struct bytes start at payloadSegment[1].
             // pass only the struct bytes to parseMessage
-            const structBytes = Uint8Array.from(dataPart.slice(1));
+            const structBytes = Uint8Array.from(payloadSegment.slice(1));
             const status = parseMessage(structBytes, 0);
             if (status) {
               updateStatusArray(status);
               //console.log('Updated status id=' + status.id, status);
             } else {
-              console.warn('parseMessage failed for id=', dataPart[1]);
+              console.warn('parseMessage failed for id=', payloadSegment[1]);
             }
           } else {
             const actualHex = '0x' + actual.toString(16).padStart(4, '0').toUpperCase();
             const expectedHex = '0x' + expected.toString(16).padStart(4, '0').toUpperCase();
-            console.warn(`Checksum mismatch for message id=${payloadFull[1]}: actual=${actualHex} expected=${expectedHex}`);
+            console.warn(`Checksum mismatch for message id=${msgData[1]}: actual=${actualHex} expected=${expectedHex}`);
           }
-        } // end payload valid check
+        } 
 
         // remove consumed bytes up to end of this message
         buffer.splice(0, totalNeeded);
@@ -282,9 +283,7 @@ disconnectBtn.addEventListener('click', disconnect);
 
 
 /**
- * Parse a status message payload.
- * Expects payload[0] === 0x01, then struct starts at payload[1].
- * Returns an object matching the C++ struct or null on error/too short.
+ * Parse a status message status data struct.
  */
 
 function parseMessage(buf, startOffset = 0, littleEndian = true) {
