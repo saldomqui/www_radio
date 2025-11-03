@@ -75,76 +75,76 @@ function computeChecksum(bytes) {
 // Message format: 0xFF, <len:1>, <cmd:1>, <payload: len - 3>, <checksum:2>
 // Only append a message to console if cmd === 0x01 and checksum matches
 async function readLoop() {
-  const buffer = []; // accumulate incoming bytes (numbers 0-255)
-  try {
-    while (keepReading && reader) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (!value || !value.length) continue;
+    const buffer = []; // accumulate incoming bytes (numbers 0-255)
+    try {
+        while (keepReading && reader) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (!value || !value.length) continue;
 
-      // append incoming bytes to buffer
-      for (const b of value) buffer.push(b);
+            // append incoming bytes to buffer
+            for (const b of value) buffer.push(b);
 
-      // parse messages while possible
-      while (true) {
-        // find start byte 0xFF
-        const startIdx = buffer.indexOf(0xFF);
-        if (startIdx === -1) {
-          // no start byte, discard old data to avoid unbounded growth
-          if (buffer.length > 1024) buffer.splice(0, buffer.length - 512);
-          break;
+            // parse messages while possible
+            while (true) {
+                // find start byte 0xFF
+                const startIdx = buffer.indexOf(0xFF);
+                if (startIdx === -1) {
+                    // no start byte, discard old data to avoid unbounded growth
+                    if (buffer.length > 1024) buffer.splice(0, buffer.length - 512);
+                    break;
+                }
+
+                // ensure we have at least start + length byte
+                if (buffer.length < startIdx + 2) break;
+
+                const len = buffer[startIdx + 1]; // length byte
+                const totalNeeded = startIdx + 2 + len;
+                if (buffer.length < totalNeeded) break; // wait for full message
+
+                // extract full payload (len bytes)
+                const msgData = buffer.slice(startIdx + 2, startIdx + 2 + len);
+
+                const cmd = msgData[0]; // command byte
+
+                // payload must be at least 3 bytes: marker + checksum(2)
+                if (msgData.length >= 3 && cmd === 0x01) {
+                    // data to checksum = msgData[0 .. len-3] (i.e. excluding last two checksum bytes)
+                    const payloadSegment = msgData.slice(0, msgData.length - 2);
+                    const chkHigh = msgData[msgData.length - 2];
+                    const chkLow = msgData[msgData.length - 1];
+                    const expected = (chkHigh << 8) | chkLow;
+                    const actual = computeChecksum(payloadSegment);
+
+                    if (actual === expected) {
+                        // payloadSegment[0] == 0x01 (marker). The C struct bytes start at payloadSegment[1].
+                        // pass only the struct bytes to parseMessage
+                        const structBytes = Uint8Array.from(payloadSegment.slice(1));
+                        const status = parseMessage(structBytes, 0);
+                        if (status) {
+                            updateStatusArray(status);
+                            //console.log('Updated status id=' + status.id, status);
+                        } else {
+                            console.warn('parseMessage failed for id=', payloadSegment[1]);
+                        }
+                    } else {
+                        const actualHex = '0x' + actual.toString(16).padStart(4, '0').toUpperCase();
+                        const expectedHex = '0x' + expected.toString(16).padStart(4, '0').toUpperCase();
+                        console.warn(`Checksum mismatch for message id=${msgData[1]}: actual=${actualHex} expected=${expectedHex}`);
+                    }
+                }
+
+                // remove consumed bytes up to end of this message
+                buffer.splice(0, totalNeeded);
+                // continue parsing any further messages in buffer
+            } // end inner parse loop
         }
-
-        // ensure we have at least start + length byte
-        if (buffer.length < startIdx + 2) break;
-
-        const len = buffer[startIdx + 1]; // length byte
-        const totalNeeded = startIdx + 2 + len;
-        if (buffer.length < totalNeeded) break; // wait for full message
-
-        // extract full payload (len bytes)
-        const msgData = buffer.slice(startIdx + 2, startIdx + 2 + len);
-
-        const cmd = msgData[0]; // command byte
-
-        // payload must be at least 3 bytes: marker + checksum(2)
-        if (msgData.length >= 3 && cmd === 0x01) {
-          // data to checksum = msgData[0 .. len-3] (i.e. excluding last two checksum bytes)
-          const payloadSegment = msgData.slice(0, msgData.length - 2);
-          const chkHigh = msgData[msgData.length - 2];
-          const chkLow = msgData[msgData.length - 1];
-          const expected = (chkHigh << 8) | chkLow;
-          const actual = computeChecksum(payloadSegment);
-
-          if (actual === expected) {
-            // payloadSegment[0] == 0x01 (marker). The C struct bytes start at payloadSegment[1].
-            // pass only the struct bytes to parseMessage
-            const structBytes = Uint8Array.from(payloadSegment.slice(1));
-            const status = parseMessage(structBytes, 0);
-            if (status) {
-              updateStatusArray(status);
-              //console.log('Updated status id=' + status.id, status);
-            } else {
-              console.warn('parseMessage failed for id=', payloadSegment[1]);
-            }
-          } else {
-            const actualHex = '0x' + actual.toString(16).padStart(4, '0').toUpperCase();
-            const expectedHex = '0x' + expected.toString(16).padStart(4, '0').toUpperCase();
-            console.warn(`Checksum mismatch for message id=${msgData[1]}: actual=${actualHex} expected=${expectedHex}`);
-          }
-        } 
-
-        // remove consumed bytes up to end of this message
-        buffer.splice(0, totalNeeded);
-        // continue parsing any further messages in buffer
-      } // end inner parse loop
+    } catch (err) {
+        console.error('Read error', err);
+        setStatus('read error: ' + (err.message || err));
+    } finally {
+        try { reader && reader.releaseLock(); } catch (e) { /* ignore */ }
     }
-  } catch (err) {
-    console.error('Read error', err);
-    setStatus('read error: ' + (err.message || err));
-  } finally {
-    try { reader && reader.releaseLock(); } catch (e) { /* ignore */ }
-  }
 }
 
 
@@ -159,9 +159,15 @@ async function connect() {
 
         // user selects port
         port = await navigator.serial.requestPort();
+
+        // print port name selected
+        const label = await getPortLabel(port);
+        deviceNameEl.textContent = `${label}: connected`;
+
+        // open port
         await port.open({ baudRate });
 
-        deviceNameEl.textContent = 'connected';
+        //deviceNameEl.textContent = 'connected';
         setStatus(`open @ ${baudRate}`);
         connectBtn.disabled = true;
         disconnectBtn.disabled = false;
@@ -265,7 +271,7 @@ async function disconnect() {
     } finally {
         connectBtn.disabled = false;
         disconnectBtn.disabled = true;
-        deviceNameEl.textContent = '/dev/ttyUSB0 (user pick)';
+        deviceNameEl.textContent = 'Choose device';
     }
 }
 
@@ -277,7 +283,7 @@ disconnectBtn.addEventListener('click', disconnect);
     if (!('serial' in navigator)) return;
     try {
         const ports = await navigator.serial.getPorts();
-        if (ports.length > 0) deviceNameEl.textContent = 'port available (click Connect)';
+        if (ports.length > 0) deviceNameEl.textContent = 'Choose device (click Connect)';
     } catch (e) { /* ignore */ }
 })();
 
@@ -395,20 +401,20 @@ function renderStatusDetailsHtml(s) {
 
 // helper: check if map center is within tolMeters of a lat/lon
 function isMapCenteredAt(lat, lon, tolMeters = 2) {
-  if (!map) return false;
-  try {
-    const center = map.getCenter();
-    // Leaflet's map.distance exists; fallback to simple degrees distance if not
-    if (typeof map.distance === 'function') {
-      return map.distance(center, L.latLng(lat, lon)) <= tolMeters;
-    } else {
-      const dx = center.lat - lat;
-      const dy = center.lng - lon;
-      return Math.sqrt(dx*dx + dy*dy) <= (tolMeters / 111000); // approx degrees
+    if (!map) return false;
+    try {
+        const center = map.getCenter();
+        // Leaflet's map.distance exists; fallback to simple degrees distance if not
+        if (typeof map.distance === 'function') {
+            return map.distance(center, L.latLng(lat, lon)) <= tolMeters;
+        } else {
+            const dx = center.lat - lat;
+            const dy = center.lng - lon;
+            return Math.sqrt(dx * dx + dy * dy) <= (tolMeters / 111000); // approx degrees
+        }
+    } catch (e) {
+        return false;
     }
-  } catch (e) {
-    return false;
-  }
 }
 
 // center map on marker for given id (optional zoom)
@@ -588,16 +594,16 @@ function initMap() {
 
 // helper to create a DivIcon with rotated arrow + ID label
 function createRobotIcon(id, headingRad) {
-  // headingRad: radians
-  const deg = Number.isFinite(headingRad) ? (headingRad * 180 / Math.PI) : 0;
+    // headingRad: radians
+    const deg = Number.isFinite(headingRad) ? (headingRad * 180 / Math.PI) : 0;
 
-  // Fix: apply rotation = 90 - heading_degrees
-  // This corrects the 90° offset and inverts direction so increasing heading
-  // rotates the arrow in the expected (clockwise) sense.
-  let rot = 90 - deg;
-  const rotNorm = ((rot % 360) + 360) % 360;
+    // Fix: apply rotation = 90 - heading_degrees
+    // This corrects the 90° offset and inverts direction so increasing heading
+    // rotates the arrow in the expected (clockwise) sense.
+    let rot = 90 - deg;
+    const rotNorm = ((rot % 360) + 360) % 360;
 
-  const svg = `
+    const svg = `
     <svg viewBox="-12 -12 24 24" xmlns="http://www.w3.org/2000/svg"
          style="transform: rotate(${rotNorm}deg); transform-origin: center;">
       <!-- arrow shaft -->
@@ -608,59 +614,59 @@ function createRobotIcon(id, headingRad) {
       <circle cx="0" cy="0" r="1.7" fill="#222"/>
     </svg>
   `;
-  const html = `<div class="robot-marker">${svg}<div class="robot-label">ID ${id}</div></div>`;
+    const html = `<div class="robot-marker">${svg}<div class="robot-label">ID ${id}</div></div>`;
 
-  return L.divIcon({
-    className: '',
-    html,
-    iconSize: [48, 28],
-    iconAnchor: [12, 12]
-  });
+    return L.divIcon({
+        className: '',
+        html,
+        iconSize: [48, 28],
+        iconAnchor: [12, 12]
+    });
 }
 
 function updateMapMarker(s) {
-  if (!s || typeof s.latitude !== 'number' || typeof s.longitude !== 'number') return;
-  const lat = Number(s.latitude);
-  const lon = Number(s.longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (!s || typeof s.latitude !== 'number' || typeof s.longitude !== 'number') return;
+    const lat = Number(s.latitude);
+    const lon = Number(s.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-  if (!map) initMap();
+    if (!map) initMap();
 
-  if (!firstLocationSet) {
-    try { map.setView([lat, lon], 19); } catch (e) {}
-    firstLocationSet = true;
-  }
+    if (!firstLocationSet) {
+        try { map.setView([lat, lon], 19); } catch (e) { }
+        firstLocationSet = true;
+    }
 
-  let m = markers.get(s.id);
-  const icon = createRobotIcon(s.id, s.heading);
+    let m = markers.get(s.id);
+    const icon = createRobotIcon(s.id, s.heading);
 
-  if (!m) {
-    m = L.marker([lat, lon], { icon, riseOnHover: true }).addTo(map);
-    markers.set(s.id, m);
+    if (!m) {
+        m = L.marker([lat, lon], { icon, riseOnHover: true }).addTo(map);
+        markers.set(s.id, m);
 
-    // ensure popupclose disables following for this id
-    m.on('popupclose', () => {
-      if (activeCenteredId === Number(s.id)) activeCenteredId = null;
-    });
-  } else {
-    m.setLatLng([lat, lon]);
-    m.setIcon(icon);
-  }
+        // ensure popupclose disables following for this id
+        m.on('popupclose', () => {
+            if (activeCenteredId === Number(s.id)) activeCenteredId = null;
+        });
+    } else {
+        m.setLatLng([lat, lon]);
+        m.setIcon(icon);
+    }
 
-  // If this id is the active centered one, snap/map.setView to keep it centered (immediate)
-  if (activeCenteredId === Number(s.id)) {
-    try {
-      // avoid redundant setView calls if already centered
-      if (!isMapCenteredAt(lat, lon, 2)) {
-        map.setView([lat, lon], map.getZoom(), { animate: false });
-      }
-    } catch (e) { /* ignore */ }
-  }
+    // If this id is the active centered one, snap/map.setView to keep it centered (immediate)
+    if (activeCenteredId === Number(s.id)) {
+        try {
+            // avoid redundant setView calls if already centered
+            if (!isMapCenteredAt(lat, lon, 2)) {
+                map.setView([lat, lon], map.getZoom(), { animate: false });
+            }
+        } catch (e) { /* ignore */ }
+    }
 
-  // update popup content if present
-  const popup = m.getPopup();
-  if (popup) {
-    const popupHtml = `
+    // update popup content if present
+    const popup = m.getPopup();
+    if (popup) {
+        const popupHtml = `
       <strong>ID ${s.id}</strong><br/>
       sync: ${s.sync_id} &nbsp; t_off: ${s.time_offset_ms} ms<br/>
       lat: ${lat.toFixed(6)}<br/>lon: ${lon.toFixed(6)}<br/>
@@ -668,11 +674,38 @@ function updateMapMarker(s) {
       cov: ${s.cov_pos.toFixed(2) ?? 'N/A'}<br/>
       spdX: ${s.speed_x.toFixed(2) ?? 'N/A'} mm/s
     `;
-    popup.setContent(popupHtml);
-  } else {
-    m.bindPopup(`<strong>ID ${s.id}</strong><br/>lat: ${lat.toFixed(6)} lon: ${lon.toFixed(6)}`);
-  }
+        popup.setContent(popupHtml);
+    } else {
+        m.bindPopup(`<strong>ID ${s.id}</strong><br/>lat: ${lat.toFixed(6)} lon: ${lon.toFixed(6)}`);
+    }
 }
+
+// return a short human-friendly label for the selected port (prefer product/label name)
+async function getPortLabel(port) {
+    if (!port) return 'device';
+    try {
+        // prefer explicit friendly fields if present
+        if (port.productName) return String(port.productName);
+        if (port.label) return String(port.label);
+        if (port.name) return String(port.name);
+
+        // some implementations expose productName inside getInfo()
+        if (typeof port.getInfo === 'function') {
+            const info = port.getInfo();
+            if (info && info.productName) return String(info.productName);
+            // fallback to VID:PID only if no friendly name exists
+            const parts = [];
+            if (info && info.usbVendorId != null) parts.push('VID_' + info.usbVendorId.toString(16).padStart(4, '0').toUpperCase());
+            if (info && info.usbProductId != null) parts.push('PID_' + info.usbProductId.toString(16).padStart(4, '0').toUpperCase());
+            if (parts.length) return parts.join(':');
+        }
+    } catch (e) { /* ignore */ }
+    return 'device';
+}
+
+// Usage (after port = await navigator.serial.requestPort()):
+// const label = await getPortLabel(port);
+// deviceNameEl.textContent = `${label}: connected`;
 
 // ensure map is initialized once DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
