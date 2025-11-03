@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
 
     <link rel="stylesheet" type="text/css" href="style.css" />
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-o9N1j8gGg3b3vGm3g2YVb8d7v3gW0hKp1l9+0G0J3v0=" crossorigin=""/>
+
+    <!-- Leaflet JS (loaded before your script) -->
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-QV7n8xkQbQ0nZ8Z+0z6V3b1N4Y9z5r2F4z6n2y1k0k0=" crossorigin=""></script>
 
     <script defer src="script.js"></script>
 
@@ -14,7 +21,7 @@
 
 <body>
     <header>
-        <div><strong>Serial Hex Viewer</strong></div>
+        <div><strong>Multirobot R2R viewer</strong></div>
         <div class="controls">
             <label>Device: <span id="deviceName">/dev/ttyUSB0 (user pick)</span></label>
             <label>Baud:
@@ -26,8 +33,15 @@
         <div id="status">status: idle</div>
     </header>
     <main>
-        <div id="log"></div>
+        <!-- replaced the old log panel with a full-page map container -->
+        <div id="map" role="region" aria-label="Map"></div>
     </main>
+
+    <!-- right-side tree -->
+    <aside id="tree" aria-label="Robot tree">
+        <h3>Robots</h3>
+        <div id="treeContent"></div>
+    </aside>
 
 </body>
 

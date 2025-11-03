@@ -10,7 +10,6 @@ const RUN_STR = "#RUN\n";
 const connectBtn = document.getElementById('connect');
 const disconnectBtn = document.getElementById('disconnect');
 const statusEl = document.getElementById('status');
-const logEl = document.getElementById('log');
 const deviceNameEl = document.getElementById('deviceName');
 const baudInput = document.getElementById('baud');
 
@@ -21,25 +20,6 @@ let runSent = false;
 
 function setStatus(s) { if (statusEl) statusEl.textContent = 'status: ' + s; }
 
-function appendHex(bytes) {
-    // bytes can be Uint8Array or Array<number>
-    const arr = Array.from(bytes);
-    const hex = arr.map(b => b.toString(16).padStart(2, '0')).join(' ');
-    const line = document.createElement('div');
-    line.textContent = hex;
-    logEl.appendChild(line);
-    while (logEl.children.length > 2000) logEl.removeChild(logEl.firstChild);
-    logEl.scrollTop = logEl.scrollHeight;
-}
-
-function appendTextLine(text) {
-    const line = document.createElement('div');
-    line.textContent = text;
-    line.style.color = '#9ad';
-    logEl.appendChild(line);
-    while (logEl.children.length > 2000) logEl.removeChild(logEl.firstChild);
-    logEl.scrollTop = logEl.scrollHeight;
-}
 
 async function writeString(s) {
     if (!writer) return;
@@ -63,7 +43,6 @@ async function readUntil(substring, timeoutMs = 5000) {
             const { value, done } = await r.read();
             if (done) break;
             if (value && value.length) {
-                appendHex(value); // show raw bytes during handshake too
                 const chunk = textDecoder.decode(value, { stream: true });
                 acc += chunk;
                 if (acc.includes(substring)) {
@@ -135,22 +114,18 @@ async function readLoop() {
                         const expected = (chkHigh << 8) | chkLow;
                         const actual = computeChecksum(dataPart);
                         //console.log('Checksum actual=', actual, 'expected=', expected);
-                        //appendHex(buffer.slice(startIdx, totalNeeded));
                         if (actual === expected) {
                             // parseMessage expects payload-like buffer starting at index 0 (marker at [0])
                             const status = parseMessage(payload, 0);
                             if (status) {
-                                appendTextLine(JSON.stringify(status));
-                                // also show raw message hex if desired:
-                            } else {
-                                appendTextLine('parseMessage: invalid/too short');
-                            }
+                                updateStatusArray(status);
+                                // debug: print concise console log
+                                console.log('Updated status id=' + status.id, status);
                         } else {
                             const actualHex = '0x' + actual.toString(16).padStart(4, '0').toUpperCase();
                             const expectedHex = '0x' + expected.toString(16).padStart(4, '0').toUpperCase();
-                            appendTextLine(`Checksum actual= ${actualHex}, expected= ${expectedHex}`);
+                            console.warn(`Checksum mismatch for message id=${payload[1]}: actual=${actualHex} expected=${expectedHex}`);
                             // show offending message in hex for diagnostics
-                            //appendHex(buffer.slice(startIdx, totalNeeded));
                         }
                     } // else ignore this message
 
@@ -217,21 +192,17 @@ async function connect() {
         }
 
         if (!initialized) {
-            appendTextLine('Device NOT INITIALIZED');
             // prepare writer
             if (port.writable) {
                 writer = port.writable.getWriter();
                 // 1) send CONFIG
                 await writeString(CONFIG_STR);
-                appendTextLine("Sent " + CONFIG_STR.trim());
 
                 // 2) wait for "#OK"
                 try {
                     setStatus('waiting for first OK...');
                     await readUntil('#OK', 200);
-                    appendTextLine('OK response');
                 } catch (e) {
-                    appendTextLine('OK not received: ' + e.message);
                     // cleanup and abort
                     try { await disconnect(); } catch (_) { }
                     return;
@@ -239,15 +210,12 @@ async function connect() {
 
                 // 3) send RUN
                 await writeString(RUN_STR);
-                appendTextLine("Sent RUN");
 
                 // 4) wait for "#OK"
                 try {
                     setStatus('OK received');
                     await readUntil('#OK', 200);
-                    appendTextLine('OK response');
                 } catch (e) {
-                    appendTextLine('OK not received: ' + e.message);
                     try { await disconnect(); } catch (_) { }
                     return;
                 }
@@ -255,9 +223,7 @@ async function connect() {
                 setStatus('port not writable');
             }
 
-        } else {
-            appendTextLine('Device initialized');
-        }
+        } 
 
         // 5) start continuous read loop (message-oriented)
         keepReading = true;
@@ -337,9 +303,9 @@ function parseMessage(buf, startOffset = 0, littleEndian = true) {
     const longitude = dv.getFloat64(off, littleEndian); off += 8;
     const heading = dv.getFloat32(off, littleEndian); off += 4;
     const cov_pos = dv.getFloat32(off, littleEndian); off += 4;
-    const speed_x = dv.getInt16(off, littleEndian); off += 2;
-    const speed_y = dv.getInt16(off, littleEndian); off += 2;
-    const rot_speed = dv.getInt16(off, littleEndian); off += 2;
+    const speed_x = (dv.getInt16(off, littleEndian))/1000.0; off += 2;
+    const speed_y = (dv.getInt16(off, littleEndian))/1000.0; off += 2;
+    const rot_speed = (dv.getInt16(off, littleEndian))/1000.0; off += 2;
     const drive_mode = dv.getUint8(off); off += 1;
     const aux_data_status = dv.getUint8(off); off += 1;
 
@@ -358,3 +324,262 @@ function parseMessage(buf, startOffset = 0, littleEndian = true) {
         aux_data_status
     };
 }
+
+// In-memory list of status_payload objects (one element per robot id)
+const statusArray = [];
+
+// helper: ensure tree container exists
+function ensureTreeContainer() {
+  let container = document.getElementById('treeContent');
+  if (!container) {
+    const tree = document.createElement('aside');
+    tree.id = 'tree';
+    tree.setAttribute('aria-label', 'Robot tree');
+    tree.style.position = 'fixed';
+    tree.style.right = '12px';
+    tree.style.top = '72px';
+    tree.style.width = '260px';
+    tree.style.maxHeight = 'calc(100vh - 84px)';
+    tree.style.overflow = 'auto';
+    tree.style.background = '#0f0f0f';
+    tree.style.border = '1px solid #222';
+    tree.style.borderRadius = '6px';
+    tree.style.padding = '8px';
+    tree.style.color = '#ddd';
+    tree.style.boxShadow = '0 2px 8px rgba(0,0,0,0.6)';
+    const h = document.createElement('h3');
+    h.textContent = 'Robots';
+    h.style.margin = '0 0 6px 0';
+    h.style.color = '#9ad';
+    tree.appendChild(h);
+    container = document.createElement('div');
+    container.id = 'treeContent';
+    tree.appendChild(container);
+    document.body.appendChild(tree);
+  }
+  return container;
+}
+
+// render detail HTML for a status object
+function renderStatusDetailsHtml(s) {
+  const lat = Number.isFinite(s.latitude) ? s.latitude.toFixed(6) : 'N/A';
+  const lon = Number.isFinite(s.longitude) ? s.longitude.toFixed(6) : 'N/A';
+  const heading = Number.isFinite(s.heading) ? s.heading.toFixed(3) : 'N/A';
+  const cov = Number.isFinite(s.cov_pos) ? s.cov_pos.toFixed(3) : 'N/A';
+  const spdX = (typeof s.speed_x !== 'undefined') ? s.speed_x : 'N/A';
+  const spdY = (typeof s.speed_y !== 'undefined') ? s.speed_y : 'N/A';
+  const rot = (typeof s.rot_speed !== 'undefined') ? s.rot_speed : 'N/A';
+  const sync = (typeof s.sync_id !== 'undefined') ? s.sync_id : 'N/A';
+  const time_off = (typeof s.time_offset_ms !== 'undefined') ? s.time_offset_ms : 'N/A';
+  const drive_mode_hex = '0x' + (Number(s.drive_mode) || 0).toString(16).padStart(2, '0').toUpperCase();
+  const aux_hex = '0x' + (Number(s.aux_data_status) || 0).toString(16).padStart(2, '0').toUpperCase();
+
+  return `
+    <div style="margin-left:4px; display:grid; grid-template-columns:90px 1fr; gap:3px; font-size:0.9em; color:#bbb;">
+      <div style="text-align:right;padding-right:6px;">sync:</div><div>${sync}</div>
+      <div style="text-align:right;padding-right:6px;">t_off:</div><div>${time_off} ms</div>
+      <div style="text-align:right;padding-right:6px;">lat:</div><div>${lat}</div>
+      <div style="text-align:right;padding-right:6px;">lon:</div><div>${lon}</div>
+      <div style="text-align:right;padding-right:6px;">hdg:</div><div>${heading} rad</div>
+      <div style="text-align:right;padding-right:6px;">cov:</div><div>${cov}</div>
+      <div style="text-align:right;padding-right:6px;">spdX:</div><div>${spdX} mm/s</div>
+      <div style="text-align:right;padding-right:6px;">spdY:</div><div>${spdY} mm/s</div>
+      <div style="text-align:right;padding-right:6px;">rot:</div><div>${rot} mrad/s</div>
+      <div style="text-align:right;padding-right:6px;">mode:</div><div>${drive_mode_hex}</div>
+      <div style="text-align:right;padding-right:6px;">aux:</div><div>${aux_hex}</div>
+    </div>
+  `;
+}
+
+// create DOM entry (collapsed by default) and attach toggle handler
+function createTreeEntry(s) {
+  const container = ensureTreeContainer();
+  const entry = document.createElement('div');
+  entry.className = 'tree-entry';
+  entry.dataset.id = String(s.id);
+  entry.style.padding = '6px 8px';
+  entry.style.borderBottom = '1px solid #111';
+  entry.style.cursor = 'pointer';
+  entry.style.color = '#ddd';
+
+  const header = document.createElement('div');
+  header.className = 'tree-header';
+  header.style.fontWeight = '600';
+  header.style.marginBottom = '6px';
+  header.textContent = `ID ${s.id}`;
+  entry.appendChild(header);
+
+  const details = document.createElement('div');
+  details.className = 'tree-details';
+  details.style.display = s._expanded ? 'block' : 'none';
+  details.innerHTML = renderStatusDetailsHtml(s);
+  entry.appendChild(details);
+
+  // toggle on click of header
+  header.addEventListener('click', (ev) => {
+    // prevent collapsing when clicking inside details accidentally
+    ev.stopPropagation();
+    s._expanded = !s._expanded;
+    details.style.display = s._expanded ? 'block' : 'none';
+  });
+
+  // clicking the whole entry toggles too
+  entry.addEventListener('click', () => {
+    s._expanded = !s._expanded;
+    details.style.display = s._expanded ? 'block' : 'none';
+  });
+
+  container.appendChild(entry);
+  return entry;
+}
+
+// update details of existing DOM entry
+function updateTreeEntryDom(s) {
+  const container = ensureTreeContainer();
+  const el = container.querySelector(`.tree-entry[data-id="${s.id}"]`);
+  if (!el) return createTreeEntry(s);
+  const details = el.querySelector('.tree-details');
+  if (details) {
+    details.innerHTML = renderStatusDetailsHtml(s);
+    details.style.display = s._expanded ? 'block' : 'none';
+  }
+}
+
+// rebuild entire tree (keeps current _expanded flags)
+function renderStatusTree() {
+  const container = ensureTreeContainer();
+  container.innerHTML = '';
+  for (let i = 0; i < statusArray.length; ++i) {
+    const s = statusArray[i];
+    // ensure _expanded boolean exists
+    if (typeof s._expanded === 'undefined') s._expanded = false;
+    createTreeEntry(s);
+  }
+}
+
+/**
+ * Update or insert status payload into statusArray using `id` as key.
+ * - s: parsed status object { id, sync_id, ... }
+ * If element exists, update its fields (preserve object reference).
+ * If not, push a shallow copy.
+ * Returns the array element.
+ */
+function updateStatusArray(s) {
+  if (!s || typeof s.id === 'undefined') return null;
+  const id = Number(s.id);
+  const idx = statusArray.findIndex(item => Number(item.id) === id);
+  if (idx >= 0) {
+    // preserve expanded flag
+    const expanded = !!statusArray[idx]._expanded;
+    Object.assign(statusArray[idx], s);
+    statusArray[idx]._expanded = expanded;
+    updateTreeEntryDom(statusArray[idx]);
+    // mark this id as active (only it will show the background)
+    setActiveTreeId(id);
+    return statusArray[idx];
+  } else {
+    const entry = Object.assign({}, s);
+    entry._expanded = false;
+    statusArray.push(entry);
+    // create DOM entry for new element
+    createTreeEntry(entry);
+    // mark new id as active
+    setActiveTreeId(id);
+    return entry;
+  }
+}
+
+// Optional helpers
+function getStatusById(id) {
+  return statusArray.find(item => Number(item.id) === Number(id)) || null;
+}
+function removeStatusById(id) {
+  const idx = statusArray.findIndex(item => Number(item.id) === Number(id));
+  if (idx >= 0) statusArray.splice(idx, 1);
+}
+
+// replace flashing helper with a single active-id setter that ensures only one entry
+// has the active background at a time.
+function setActiveTreeId(id, color = '#274C77') {
+  const container = ensureTreeContainer();
+  if (!container) return;
+
+  // clear previous active background from all entries
+  const entries = container.querySelectorAll('.tree-entry .tree-header');
+  entries.forEach(h => {
+    h.style.backgroundColor = '';
+  });
+
+  // set active background for the requested id
+  const entry = container.querySelector(`.tree-entry[data-id="${id}"]`);
+  if (!entry) return;
+  const header = entry.querySelector('.tree-header') || entry;
+  header.style.backgroundColor = color;
+}
+
+// Leaflet map + marker management
+let map = null;
+const markers = new Map(); // id -> L.Marker
+
+function initMap() {
+  if (map) return;
+  // default view
+  map = L.map('map', { preferCanvas: true }).setView([0, 0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+}
+
+function updateMapMarker(s) {
+  if (!s || typeof s.latitude !== 'number' || typeof s.longitude !== 'number') return;
+  const lat = Number(s.latitude);
+  const lon = Number(s.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+  // create marker if missing
+  let m = markers.get(s.id);
+  const popupHtml = `
+    <strong>ID ${s.id}</strong><br/>
+    sync: ${s.sync_id} &nbsp; t_off: ${s.time_offset_ms} ms<br/>
+    lat: ${lat.toFixed(6)}<br/>lon: ${lon.toFixed(6)}<br/>
+    hdg: ${s.heading?.toFixed(3) ?? 'N/A'} rad<br/>
+    cov: ${s.cov_pos ?? 'N/A'}<br/>
+    spdX: ${s.speed_x ?? 'N/A'} mm/s
+  `;
+  if (!m) {
+    m = L.marker([lat, lon]);
+    m.addTo(map).bindPopup(popupHtml);
+    markers.set(s.id, m);
+  } else {
+    m.setLatLng([lat, lon]);
+    m.getPopup()?.setContent(popupHtml);
+  }
+}
+
+// ensure map is initialized once DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  initMap();
+});
+
+// hook into updateStatusArray: call updateMapMarker after you update the array
+// find the existing updateStatusArray function in this file and add a call like:
+//    updateMapMarker(statusArray[idx])   // after Object.assign update
+// or when creating new entry:
+//    updateMapMarker(entry)
+// Example small patch (conceptual):
+/*
+function updateStatusArray(s) {
+  ...
+  if (idx >= 0) {
+    Object.assign(statusArray[idx], s);
+    updateMapMarker(statusArray[idx]);   // << -- add this line
+    ...
+  } else {
+    const entry = Object.assign({}, s);
+    statusArray.push(entry);
+    updateMapMarker(entry);              // << -- add this line
+    ...
+  }
+}
+*/

@@ -37,16 +37,6 @@ main {
     color: #fff;
 }
 
-#log {
-    background: #050505;
-    padding: 10px;
-    border-radius: 6px;
-    height: 70vh;
-    overflow: auto;
-    white-space: pre;
-    font-size: 12px;
-}
-
 #status {
     margin-left: auto;
     font-size: 0.9em;
@@ -66,4 +56,49 @@ input[type="number"] {
     border: 1px solid #333;
     background: #070707;
     color: #fff;
+}
+
+/* right sidebar tree */
+#tree {
+    position: fixed;
+    right: 12px;
+    top: 72px; /* below header */
+    width: 200px;
+    max-height: calc(100vh - 84px);
+    overflow: auto;
+    background: #0f0f0f;
+    border: 1px solid #222;
+    border-radius: 6px;
+    padding: 8px;
+    color: #ddd;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    z-index: 30;
+}
+
+#tree h3 {
+    margin: 0 0 6px 0;
+    font-size: 0.95rem;
+    color: #9ad;
+}
+
+#treeContent ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+#treeContent li {
+    padding: 6px 8px;
+    border-bottom: 1px solid #111;
+    font-size: 0.9rem;
+    cursor: default;
+}
+
+#treeContent li:hover {
+    background: #161616;
+}
+
+/* ensure main area doesn't hide behind the sidebar on smaller screens */
+@media (min-width: 820px) {
+    main { margin-right: 220px; }
 }
