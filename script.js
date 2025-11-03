@@ -393,6 +393,43 @@ function renderStatusDetailsHtml(s) {
   `;
 }
 
+// helper: check if map center is within tolMeters of a lat/lon
+function isMapCenteredAt(lat, lon, tolMeters = 2) {
+  if (!map) return false;
+  try {
+    const center = map.getCenter();
+    // Leaflet's map.distance exists; fallback to simple degrees distance if not
+    if (typeof map.distance === 'function') {
+      return map.distance(center, L.latLng(lat, lon)) <= tolMeters;
+    } else {
+      const dx = center.lat - lat;
+      const dy = center.lng - lon;
+      return Math.sqrt(dx*dx + dy*dy) <= (tolMeters / 111000); // approx degrees
+    }
+  } catch (e) {
+    return false;
+  }
+}
+
+// center map on marker for given id (optional zoom)
+// Sets activeCenteredId so the map will keep following this id until its popup is closed.
+function centerMapOnId(id, zoom = null) {
+    if (!map) return;
+    const m = markers.get(Number(id));
+    if (!m) return;
+    const latlng = m.getLatLng();
+    if (!latlng) return;
+    try {
+        // open popup for visual feedback
+        if (m.getPopup()) m.openPopup();
+        // set view immediately (animated) when user requests centering
+        if (zoom && Number.isFinite(zoom)) map.setView(latlng, zoom, { animate: true });
+        else map.setView(latlng, map.getZoom(), { animate: true });
+        // enable centering/follow for this id
+        activeCenteredId = Number(id);
+    } catch (e) { /* ignore */ }
+}
+
 // create DOM entry (collapsed by default) and attach toggle handler
 function createTreeEntry(s) {
     const container = ensureTreeContainer();
@@ -417,18 +454,20 @@ function createTreeEntry(s) {
     details.innerHTML = renderStatusDetailsHtml(s);
     entry.appendChild(details);
 
-    // toggle on click of header
+    // toggle on click of header and center map on this robot only when expanding
     header.addEventListener('click', (ev) => {
-        // prevent collapsing when clicking inside details accidentally
         ev.stopPropagation();
         s._expanded = !s._expanded;
         details.style.display = s._expanded ? 'block' : 'none';
+        // center map on this robot's marker only when expanded (opening)
+        if (s._expanded) centerMapOnId(s.id);
     });
 
-    // clicking the whole entry toggles too
+    // clicking the whole entry toggles too (and centers only when expanding)
     entry.addEventListener('click', () => {
         s._expanded = !s._expanded;
         details.style.display = s._expanded ? 'block' : 'none';
+        if (s._expanded) centerMapOnId(s.id);
     });
 
     container.appendChild(entry);
@@ -528,6 +567,10 @@ let map = null;
 const markers = new Map(); // id -> L.Marker
 let firstLocationSet = false; // center map once on first valid status
 
+// NEW: id of tree/marker that should keep the map centered while its popup is open
+let activeCenteredId = null;
+
+// initialize the Leaflet map (called once)
 function initMap() {
     if (map) return;
     // default view (world)
@@ -594,9 +637,24 @@ function updateMapMarker(s) {
   if (!m) {
     m = L.marker([lat, lon], { icon, riseOnHover: true }).addTo(map);
     markers.set(s.id, m);
+
+    // ensure popupclose disables following for this id
+    m.on('popupclose', () => {
+      if (activeCenteredId === Number(s.id)) activeCenteredId = null;
+    });
   } else {
     m.setLatLng([lat, lon]);
     m.setIcon(icon);
+  }
+
+  // If this id is the active centered one, snap/map.setView to keep it centered (immediate)
+  if (activeCenteredId === Number(s.id)) {
+    try {
+      // avoid redundant setView calls if already centered
+      if (!isMapCenteredAt(lat, lon, 2)) {
+        map.setView([lat, lon], map.getZoom(), { animate: false });
+      }
+    } catch (e) { /* ignore */ }
   }
 
   // update popup content if present
@@ -612,7 +670,6 @@ function updateMapMarker(s) {
     `;
     popup.setContent(popupHtml);
   } else {
-    // optionally bind a popup if you want
     m.bindPopup(`<strong>ID ${s.id}</strong><br/>lat: ${lat.toFixed(6)} lon: ${lon.toFixed(6)}`);
   }
 }
