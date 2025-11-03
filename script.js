@@ -76,71 +76,74 @@ function computeChecksum(bytes) {
 // payload layout: payload[0] == 0x01, payload[1..] = data, last two bytes of payload are checksum (high, low)
 // Only append a message to console if payload[0] === 0x01 and checksum matches
 async function readLoop() {
-    const buffer = []; // accumulate incoming bytes (numbers 0-255)
-    try {
-        while (keepReading && reader) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            if (value && value.length) {
-                // append incoming bytes to buffer
-                for (const b of value) buffer.push(b);
+  const buffer = []; // accumulate incoming bytes (numbers 0-255)
+  try {
+    while (keepReading && reader) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!value || !value.length) continue;
 
-                // parse messages while possible
-                while (true) {
-                    // find start byte 0xFF
-                    const startIdx = buffer.indexOf(0xFF);
-                    if (startIdx === -1) {
-                        // no start byte, discard old data to avoid unbounded growth
-                        if (buffer.length > 1024) buffer.splice(0, buffer.length - 512);
-                        break;
-                    }
+      // append incoming bytes to buffer
+      for (const b of value) buffer.push(b);
 
-                    // ensure we have at least start + length byte
-                    if (buffer.length < startIdx + 2) break;
-
-                    const len = buffer[startIdx + 1]; // length byte
-                    const totalNeeded = startIdx + 2 + len;
-                    if (buffer.length < totalNeeded) break; // wait for full message
-
-                    // extract payload (len bytes)
-                    const dataPart = buffer.slice(startIdx + 2, startIdx + 2 + len - 2); // includes command, payload, checksum
-
-                    // payload must be at least 3 bytes: command and checksum(2 bytes)
-                    if (len >= 3 && buffer[startIdx + 2] === 0x01) {
-                        const payload = buffer.slice(startIdx + 3, startIdx + 3 + len - 2);
-                        // Split data (without checksum) and checksum bytes
-                        const chkHigh = buffer[startIdx + 2 + len - 2];
-                        const chkLow = buffer[startIdx + 2 + len - 1];
-                        const expected = (chkHigh << 8) | chkLow;
-                        const actual = computeChecksum(dataPart);
-                        //console.log('Checksum actual=', actual, 'expected=', expected);
-                        if (actual === expected) {
-                            // parseMessage expects payload-like buffer starting at index 0 (marker at [0])
-                            const status = parseMessage(payload, 0);
-                            if (status) {
-                                updateStatusArray(status);
-                                // debug: print concise console log
-                                console.log('Updated status id=' + status.id, status);
-                        } else {
-                            const actualHex = '0x' + actual.toString(16).padStart(4, '0').toUpperCase();
-                            const expectedHex = '0x' + expected.toString(16).padStart(4, '0').toUpperCase();
-                            console.warn(`Checksum mismatch for message id=${payload[1]}: actual=${actualHex} expected=${expectedHex}`);
-                            // show offending message in hex for diagnostics
-                        }
-                    } // else ignore this message
-
-                    // remove consumed bytes up to end of this message
-                    buffer.splice(0, totalNeeded);
-                    // continue parsing any further messages in buffer
-                } // end inner parse loop
-            }
+      // parse messages while possible
+      while (true) {
+        // find start byte 0xFF
+        const startIdx = buffer.indexOf(0xFF);
+        if (startIdx === -1) {
+          // no start byte, discard old data to avoid unbounded growth
+          if (buffer.length > 1024) buffer.splice(0, buffer.length - 512);
+          break;
         }
-    } catch (err) {
-        console.error('Read error', err);
-        setStatus('read error: ' + (err.message || err));
-    } finally {
-        try { reader && reader.releaseLock(); } catch (e) { }
+
+        // ensure we have at least start + length byte
+        if (buffer.length < startIdx + 2) break;
+
+        const len = buffer[startIdx + 1]; // length byte
+        const totalNeeded = startIdx + 2 + len;
+        if (buffer.length < totalNeeded) break; // wait for full message
+
+        // extract full payload (len bytes)
+        const payloadFull = buffer.slice(startIdx + 2, startIdx + 2 + len);
+
+        // payload must be at least 3 bytes: marker + checksum(2)
+        if (payloadFull.length >= 3 && payloadFull[0] === 0x01) {
+          // data to checksum = payloadFull[0 .. len-3] (i.e. excluding last two checksum bytes)
+          const dataPart = payloadFull.slice(0, payloadFull.length - 2);
+          const chkHigh = payloadFull[payloadFull.length - 2];
+          const chkLow = payloadFull[payloadFull.length - 1];
+          const expected = (chkHigh << 8) | chkLow;
+          const actual = computeChecksum(dataPart);
+
+          if (actual === expected) {
+            // dataPart[0] == 0x01 (marker). The C struct bytes start at dataPart[1].
+            // pass only the struct bytes to parseMessage
+            const structBytes = Uint8Array.from(dataPart.slice(1));
+            const status = parseMessage(structBytes, 0);
+            if (status) {
+              updateStatusArray(status);
+              console.log('Updated status id=' + status.id, status);
+            } else {
+              console.warn('parseMessage failed for id=', dataPart[1]);
+            }
+          } else {
+            const actualHex = '0x' + actual.toString(16).padStart(4, '0').toUpperCase();
+            const expectedHex = '0x' + expected.toString(16).padStart(4, '0').toUpperCase();
+            console.warn(`Checksum mismatch for message id=${payloadFull[1]}: actual=${actualHex} expected=${expectedHex}`);
+          }
+        } // end payload valid check
+
+        // remove consumed bytes up to end of this message
+        buffer.splice(0, totalNeeded);
+        // continue parsing any further messages in buffer
+      } // end inner parse loop
     }
+  } catch (err) {
+    console.error('Read error', err);
+    setStatus('read error: ' + (err.message || err));
+  } finally {
+    try { reader && reader.releaseLock(); } catch (e) { /* ignore */ }
+  }
 }
 
 
@@ -223,7 +226,7 @@ async function connect() {
                 setStatus('port not writable');
             }
 
-        } 
+        }
 
         // 5) start continuous read loop (message-oriented)
         keepReading = true;
@@ -303,9 +306,9 @@ function parseMessage(buf, startOffset = 0, littleEndian = true) {
     const longitude = dv.getFloat64(off, littleEndian); off += 8;
     const heading = dv.getFloat32(off, littleEndian); off += 4;
     const cov_pos = dv.getFloat32(off, littleEndian); off += 4;
-    const speed_x = (dv.getInt16(off, littleEndian))/1000.0; off += 2;
-    const speed_y = (dv.getInt16(off, littleEndian))/1000.0; off += 2;
-    const rot_speed = (dv.getInt16(off, littleEndian))/1000.0; off += 2;
+    const speed_x = (dv.getInt16(off, littleEndian)) / 1000.0; off += 2;
+    const speed_y = (dv.getInt16(off, littleEndian)) / 1000.0; off += 2;
+    const rot_speed = (dv.getInt16(off, littleEndian)) / 1000.0; off += 2;
     const drive_mode = dv.getUint8(off); off += 1;
     const aux_data_status = dv.getUint8(off); off += 1;
 
@@ -330,51 +333,51 @@ const statusArray = [];
 
 // helper: ensure tree container exists
 function ensureTreeContainer() {
-  let container = document.getElementById('treeContent');
-  if (!container) {
-    const tree = document.createElement('aside');
-    tree.id = 'tree';
-    tree.setAttribute('aria-label', 'Robot tree');
-    tree.style.position = 'fixed';
-    tree.style.right = '12px';
-    tree.style.top = '72px';
-    tree.style.width = '260px';
-    tree.style.maxHeight = 'calc(100vh - 84px)';
-    tree.style.overflow = 'auto';
-    tree.style.background = '#0f0f0f';
-    tree.style.border = '1px solid #222';
-    tree.style.borderRadius = '6px';
-    tree.style.padding = '8px';
-    tree.style.color = '#ddd';
-    tree.style.boxShadow = '0 2px 8px rgba(0,0,0,0.6)';
-    const h = document.createElement('h3');
-    h.textContent = 'Robots';
-    h.style.margin = '0 0 6px 0';
-    h.style.color = '#9ad';
-    tree.appendChild(h);
-    container = document.createElement('div');
-    container.id = 'treeContent';
-    tree.appendChild(container);
-    document.body.appendChild(tree);
-  }
-  return container;
+    let container = document.getElementById('treeContent');
+    if (!container) {
+        const tree = document.createElement('aside');
+        tree.id = 'tree';
+        tree.setAttribute('aria-label', 'Robot tree');
+        tree.style.position = 'fixed';
+        tree.style.right = '12px';
+        tree.style.top = '72px';
+        tree.style.width = '260px';
+        tree.style.maxHeight = 'calc(100vh - 84px)';
+        tree.style.overflow = 'auto';
+        tree.style.background = '#0f0f0f';
+        tree.style.border = '1px solid #222';
+        tree.style.borderRadius = '6px';
+        tree.style.padding = '8px';
+        tree.style.color = '#ddd';
+        tree.style.boxShadow = '0 2px 8px rgba(0,0,0,0.6)';
+        const h = document.createElement('h3');
+        h.textContent = 'Robots';
+        h.style.margin = '0 0 6px 0';
+        h.style.color = '#9ad';
+        tree.appendChild(h);
+        container = document.createElement('div');
+        container.id = 'treeContent';
+        tree.appendChild(container);
+        document.body.appendChild(tree);
+    }
+    return container;
 }
 
 // render detail HTML for a status object
 function renderStatusDetailsHtml(s) {
-  const lat = Number.isFinite(s.latitude) ? s.latitude.toFixed(6) : 'N/A';
-  const lon = Number.isFinite(s.longitude) ? s.longitude.toFixed(6) : 'N/A';
-  const heading = Number.isFinite(s.heading) ? s.heading.toFixed(3) : 'N/A';
-  const cov = Number.isFinite(s.cov_pos) ? s.cov_pos.toFixed(3) : 'N/A';
-  const spdX = (typeof s.speed_x !== 'undefined') ? s.speed_x : 'N/A';
-  const spdY = (typeof s.speed_y !== 'undefined') ? s.speed_y : 'N/A';
-  const rot = (typeof s.rot_speed !== 'undefined') ? s.rot_speed : 'N/A';
-  const sync = (typeof s.sync_id !== 'undefined') ? s.sync_id : 'N/A';
-  const time_off = (typeof s.time_offset_ms !== 'undefined') ? s.time_offset_ms : 'N/A';
-  const drive_mode_hex = '0x' + (Number(s.drive_mode) || 0).toString(16).padStart(2, '0').toUpperCase();
-  const aux_hex = '0x' + (Number(s.aux_data_status) || 0).toString(16).padStart(2, '0').toUpperCase();
+    const lat = Number.isFinite(s.latitude) ? s.latitude.toFixed(6) : 'N/A';
+    const lon = Number.isFinite(s.longitude) ? s.longitude.toFixed(6) : 'N/A';
+    const heading = Number.isFinite(s.heading) ? s.heading.toFixed(3) : 'N/A';
+    const cov = Number.isFinite(s.cov_pos) ? s.cov_pos.toFixed(3) : 'N/A';
+    const spdX = (typeof s.speed_x !== 'undefined') ? s.speed_x : 'N/A';
+    const spdY = (typeof s.speed_y !== 'undefined') ? s.speed_y : 'N/A';
+    const rot = (typeof s.rot_speed !== 'undefined') ? s.rot_speed : 'N/A';
+    const sync = (typeof s.sync_id !== 'undefined') ? s.sync_id : 'N/A';
+    const time_off = (typeof s.time_offset_ms !== 'undefined') ? s.time_offset_ms : 'N/A';
+    const drive_mode_hex = '0x' + (Number(s.drive_mode) || 0).toString(16).padStart(2, '0').toUpperCase();
+    const aux_hex = '0x' + (Number(s.aux_data_status) || 0).toString(16).padStart(2, '0').toUpperCase();
 
-  return `
+    return `
     <div style="margin-left:4px; display:grid; grid-template-columns:90px 1fr; gap:3px; font-size:0.9em; color:#bbb;">
       <div style="text-align:right;padding-right:6px;">sync:</div><div>${sync}</div>
       <div style="text-align:right;padding-right:6px;">t_off:</div><div>${time_off} ms</div>
@@ -393,68 +396,68 @@ function renderStatusDetailsHtml(s) {
 
 // create DOM entry (collapsed by default) and attach toggle handler
 function createTreeEntry(s) {
-  const container = ensureTreeContainer();
-  const entry = document.createElement('div');
-  entry.className = 'tree-entry';
-  entry.dataset.id = String(s.id);
-  entry.style.padding = '6px 8px';
-  entry.style.borderBottom = '1px solid #111';
-  entry.style.cursor = 'pointer';
-  entry.style.color = '#ddd';
+    const container = ensureTreeContainer();
+    const entry = document.createElement('div');
+    entry.className = 'tree-entry';
+    entry.dataset.id = String(s.id);
+    entry.style.padding = '6px 8px';
+    entry.style.borderBottom = '1px solid #111';
+    entry.style.cursor = 'pointer';
+    entry.style.color = '#ddd';
 
-  const header = document.createElement('div');
-  header.className = 'tree-header';
-  header.style.fontWeight = '600';
-  header.style.marginBottom = '6px';
-  header.textContent = `ID ${s.id}`;
-  entry.appendChild(header);
+    const header = document.createElement('div');
+    header.className = 'tree-header';
+    header.style.fontWeight = '600';
+    header.style.marginBottom = '6px';
+    header.textContent = `ID ${s.id}`;
+    entry.appendChild(header);
 
-  const details = document.createElement('div');
-  details.className = 'tree-details';
-  details.style.display = s._expanded ? 'block' : 'none';
-  details.innerHTML = renderStatusDetailsHtml(s);
-  entry.appendChild(details);
-
-  // toggle on click of header
-  header.addEventListener('click', (ev) => {
-    // prevent collapsing when clicking inside details accidentally
-    ev.stopPropagation();
-    s._expanded = !s._expanded;
+    const details = document.createElement('div');
+    details.className = 'tree-details';
     details.style.display = s._expanded ? 'block' : 'none';
-  });
+    details.innerHTML = renderStatusDetailsHtml(s);
+    entry.appendChild(details);
 
-  // clicking the whole entry toggles too
-  entry.addEventListener('click', () => {
-    s._expanded = !s._expanded;
-    details.style.display = s._expanded ? 'block' : 'none';
-  });
+    // toggle on click of header
+    header.addEventListener('click', (ev) => {
+        // prevent collapsing when clicking inside details accidentally
+        ev.stopPropagation();
+        s._expanded = !s._expanded;
+        details.style.display = s._expanded ? 'block' : 'none';
+    });
 
-  container.appendChild(entry);
-  return entry;
+    // clicking the whole entry toggles too
+    entry.addEventListener('click', () => {
+        s._expanded = !s._expanded;
+        details.style.display = s._expanded ? 'block' : 'none';
+    });
+
+    container.appendChild(entry);
+    return entry;
 }
 
 // update details of existing DOM entry
 function updateTreeEntryDom(s) {
-  const container = ensureTreeContainer();
-  const el = container.querySelector(`.tree-entry[data-id="${s.id}"]`);
-  if (!el) return createTreeEntry(s);
-  const details = el.querySelector('.tree-details');
-  if (details) {
-    details.innerHTML = renderStatusDetailsHtml(s);
-    details.style.display = s._expanded ? 'block' : 'none';
-  }
+    const container = ensureTreeContainer();
+    const el = container.querySelector(`.tree-entry[data-id="${s.id}"]`);
+    if (!el) return createTreeEntry(s);
+    const details = el.querySelector('.tree-details');
+    if (details) {
+        details.innerHTML = renderStatusDetailsHtml(s);
+        details.style.display = s._expanded ? 'block' : 'none';
+    }
 }
 
 // rebuild entire tree (keeps current _expanded flags)
 function renderStatusTree() {
-  const container = ensureTreeContainer();
-  container.innerHTML = '';
-  for (let i = 0; i < statusArray.length; ++i) {
-    const s = statusArray[i];
-    // ensure _expanded boolean exists
-    if (typeof s._expanded === 'undefined') s._expanded = false;
-    createTreeEntry(s);
-  }
+    const container = ensureTreeContainer();
+    container.innerHTML = '';
+    for (let i = 0; i < statusArray.length; ++i) {
+        const s = statusArray[i];
+        // ensure _expanded boolean exists
+        if (typeof s._expanded === 'undefined') s._expanded = false;
+        createTreeEntry(s);
+    }
 }
 
 /**
@@ -465,56 +468,60 @@ function renderStatusTree() {
  * Returns the array element.
  */
 function updateStatusArray(s) {
-  if (!s || typeof s.id === 'undefined') return null;
-  const id = Number(s.id);
-  const idx = statusArray.findIndex(item => Number(item.id) === id);
-  if (idx >= 0) {
-    // preserve expanded flag
-    const expanded = !!statusArray[idx]._expanded;
-    Object.assign(statusArray[idx], s);
-    statusArray[idx]._expanded = expanded;
-    updateTreeEntryDom(statusArray[idx]);
-    // mark this id as active (only it will show the background)
-    setActiveTreeId(id);
-    return statusArray[idx];
-  } else {
-    const entry = Object.assign({}, s);
-    entry._expanded = false;
-    statusArray.push(entry);
-    // create DOM entry for new element
-    createTreeEntry(entry);
-    // mark new id as active
-    setActiveTreeId(id);
-    return entry;
-  }
+    if (!s || typeof s.id === 'undefined') return null;
+    const id = Number(s.id);
+    const idx = statusArray.findIndex(item => Number(item.id) === id);
+    if (idx >= 0) {
+        // preserve expanded flag
+        const expanded = !!statusArray[idx]._expanded;
+        Object.assign(statusArray[idx], s);
+        statusArray[idx]._expanded = expanded;
+        updateTreeEntryDom(statusArray[idx]);
+        // mark this id as active (only it will show the background)
+        setActiveTreeId(id);
+        // update marker on the map for this id
+        //updateMapMarker(statusArray[idx]);
+        return statusArray[idx];
+    } else {
+        const entry = Object.assign({}, s);
+        entry._expanded = false;
+        statusArray.push(entry);
+        // create DOM entry for new element
+        createTreeEntry(entry);
+        // mark new id as active
+        setActiveTreeId(id);
+        // add marker for new entry
+        //updateMapMarker(entry);
+        return entry;
+    }
 }
 
 // Optional helpers
 function getStatusById(id) {
-  return statusArray.find(item => Number(item.id) === Number(id)) || null;
+    return statusArray.find(item => Number(item.id) === Number(id)) || null;
 }
 function removeStatusById(id) {
-  const idx = statusArray.findIndex(item => Number(item.id) === Number(id));
-  if (idx >= 0) statusArray.splice(idx, 1);
+    const idx = statusArray.findIndex(item => Number(item.id) === Number(id));
+    if (idx >= 0) statusArray.splice(idx, 1);
 }
 
 // replace flashing helper with a single active-id setter that ensures only one entry
 // has the active background at a time.
 function setActiveTreeId(id, color = '#274C77') {
-  const container = ensureTreeContainer();
-  if (!container) return;
+    const container = ensureTreeContainer();
+    if (!container) return;
 
-  // clear previous active background from all entries
-  const entries = container.querySelectorAll('.tree-entry .tree-header');
-  entries.forEach(h => {
-    h.style.backgroundColor = '';
-  });
+    // clear previous active background from all entries
+    const entries = container.querySelectorAll('.tree-entry .tree-header');
+    entries.forEach(h => {
+        h.style.backgroundColor = '';
+    });
 
-  // set active background for the requested id
-  const entry = container.querySelector(`.tree-entry[data-id="${id}"]`);
-  if (!entry) return;
-  const header = entry.querySelector('.tree-header') || entry;
-  header.style.backgroundColor = color;
+    // set active background for the requested id
+    const entry = container.querySelector(`.tree-entry[data-id="${id}"]`);
+    if (!entry) return;
+    const header = entry.querySelector('.tree-header') || entry;
+    header.style.backgroundColor = color;
 }
 
 // Leaflet map + marker management
@@ -522,24 +529,24 @@ let map = null;
 const markers = new Map(); // id -> L.Marker
 
 function initMap() {
-  if (map) return;
-  // default view
-  map = L.map('map', { preferCanvas: true }).setView([0, 0], 2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
+    if (map) return;
+    // default view
+    map = L.map('map', { preferCanvas: true }).setView([0, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
 }
 
 function updateMapMarker(s) {
-  if (!s || typeof s.latitude !== 'number' || typeof s.longitude !== 'number') return;
-  const lat = Number(s.latitude);
-  const lon = Number(s.longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (!s || typeof s.latitude !== 'number' || typeof s.longitude !== 'number') return;
+    const lat = Number(s.latitude);
+    const lon = Number(s.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-  // create marker if missing
-  let m = markers.get(s.id);
-  const popupHtml = `
+    // create marker if missing
+    let m = markers.get(s.id);
+    const popupHtml = `
     <strong>ID ${s.id}</strong><br/>
     sync: ${s.sync_id} &nbsp; t_off: ${s.time_offset_ms} ms<br/>
     lat: ${lat.toFixed(6)}<br/>lon: ${lon.toFixed(6)}<br/>
@@ -547,39 +554,17 @@ function updateMapMarker(s) {
     cov: ${s.cov_pos ?? 'N/A'}<br/>
     spdX: ${s.speed_x ?? 'N/A'} mm/s
   `;
-  if (!m) {
-    m = L.marker([lat, lon]);
-    m.addTo(map).bindPopup(popupHtml);
-    markers.set(s.id, m);
-  } else {
-    m.setLatLng([lat, lon]);
-    m.getPopup()?.setContent(popupHtml);
-  }
+    if (!m) {
+        m = L.marker([lat, lon]);
+        m.addTo(map).bindPopup(popupHtml);
+        markers.set(s.id, m);
+    } else {
+        m.setLatLng([lat, lon]);
+        m.getPopup()?.setContent(popupHtml);
+    }
 }
 
 // ensure map is initialized once DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  initMap();
+    initMap();
 });
-
-// hook into updateStatusArray: call updateMapMarker after you update the array
-// find the existing updateStatusArray function in this file and add a call like:
-//    updateMapMarker(statusArray[idx])   // after Object.assign update
-// or when creating new entry:
-//    updateMapMarker(entry)
-// Example small patch (conceptual):
-/*
-function updateStatusArray(s) {
-  ...
-  if (idx >= 0) {
-    Object.assign(statusArray[idx], s);
-    updateMapMarker(statusArray[idx]);   // << -- add this line
-    ...
-  } else {
-    const entry = Object.assign({}, s);
-    statusArray.push(entry);
-    updateMapMarker(entry);              // << -- add this line
-    ...
-  }
-}
-*/
