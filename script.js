@@ -122,7 +122,7 @@ async function readLoop() {
             const status = parseMessage(structBytes, 0);
             if (status) {
               updateStatusArray(status);
-              console.log('Updated status id=' + status.id, status);
+              //console.log('Updated status id=' + status.id, status);
             } else {
               console.warn('parseMessage failed for id=', dataPart[1]);
             }
@@ -480,7 +480,7 @@ function updateStatusArray(s) {
         // mark this id as active (only it will show the background)
         setActiveTreeId(id);
         // update marker on the map for this id
-        //updateMapMarker(statusArray[idx]);
+        updateMapMarker(statusArray[idx]);
         return statusArray[idx];
     } else {
         const entry = Object.assign({}, s);
@@ -491,7 +491,7 @@ function updateStatusArray(s) {
         // mark new id as active
         setActiveTreeId(id);
         // add marker for new entry
-        //updateMapMarker(entry);
+        updateMapMarker(entry);
         return entry;
     }
 }
@@ -527,41 +527,95 @@ function setActiveTreeId(id, color = '#274C77') {
 // Leaflet map + marker management
 let map = null;
 const markers = new Map(); // id -> L.Marker
+let firstLocationSet = false; // center map once on first valid status
 
 function initMap() {
     if (map) return;
-    // default view
+    // default view (world)
     map = L.map('map', { preferCanvas: true }).setView([0, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors'
+
+    // Satellite imagery (ESRI World Imagery). maxZoom 20 to allow house-level zoom.
+    L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+        name: 'GOOGLE_HYBRID_MAP',
+        maxZoom: 24,
+        maxNativeZoom: 21,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        id: 'mapbox.satellite',
     }).addTo(map);
 }
 
-function updateMapMarker(s) {
-    if (!s || typeof s.latitude !== 'number' || typeof s.longitude !== 'number') return;
-    const lat = Number(s.latitude);
-    const lon = Number(s.longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+// helper to create a DivIcon with rotated arrow + ID label
+function createRobotIcon(id, headingRad) {
+  // headingRad: radians
+  const deg = Number.isFinite(headingRad) ? (headingRad * 180 / Math.PI) : 0;
 
-    // create marker if missing
-    let m = markers.get(s.id);
-    const popupHtml = `
-    <strong>ID ${s.id}</strong><br/>
-    sync: ${s.sync_id} &nbsp; t_off: ${s.time_offset_ms} ms<br/>
-    lat: ${lat.toFixed(6)}<br/>lon: ${lon.toFixed(6)}<br/>
-    hdg: ${s.heading?.toFixed(3) ?? 'N/A'} rad<br/>
-    cov: ${s.cov_pos ?? 'N/A'}<br/>
-    spdX: ${s.speed_x ?? 'N/A'} mm/s
+  // Fix: apply rotation = 90 - heading_degrees
+  // This corrects the 90° offset and inverts direction so increasing heading
+  // rotates the arrow in the expected (clockwise) sense.
+  let rot = 90 - deg;
+  const rotNorm = ((rot % 360) + 360) % 360;
+
+  const svg = `
+    <svg viewBox="-12 -12 24 24" xmlns="http://www.w3.org/2000/svg"
+         style="transform: rotate(${rotNorm}deg); transform-origin: center;">
+      <!-- arrow shaft -->
+      <line x1="0" y1="6" x2="0" y2="-6" stroke="#ffd966" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- arrow head -->
+      <path d="M0 -9 L5 -4 L0 -6 L-5 -4 Z" fill="#ff6f61" stroke="#c84a3a" stroke-width="0.5"/>
+      <!-- center circle -->
+      <circle cx="0" cy="0" r="1.7" fill="#222"/>
+    </svg>
   `;
-    if (!m) {
-        m = L.marker([lat, lon]);
-        m.addTo(map).bindPopup(popupHtml);
-        markers.set(s.id, m);
-    } else {
-        m.setLatLng([lat, lon]);
-        m.getPopup()?.setContent(popupHtml);
-    }
+  const html = `<div class="robot-marker">${svg}<div class="robot-label">ID ${id}</div></div>`;
+
+  return L.divIcon({
+    className: '',
+    html,
+    iconSize: [48, 28],
+    iconAnchor: [12, 12]
+  });
+}
+
+function updateMapMarker(s) {
+  if (!s || typeof s.latitude !== 'number' || typeof s.longitude !== 'number') return;
+  const lat = Number(s.latitude);
+  const lon = Number(s.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+  if (!map) initMap();
+
+  if (!firstLocationSet) {
+    try { map.setView([lat, lon], 19); } catch (e) {}
+    firstLocationSet = true;
+  }
+
+  let m = markers.get(s.id);
+  const icon = createRobotIcon(s.id, s.heading);
+
+  if (!m) {
+    m = L.marker([lat, lon], { icon, riseOnHover: true }).addTo(map);
+    markers.set(s.id, m);
+  } else {
+    m.setLatLng([lat, lon]);
+    m.setIcon(icon);
+  }
+
+  // update popup content if present
+  const popup = m.getPopup();
+  if (popup) {
+    const popupHtml = `
+      <strong>ID ${s.id}</strong><br/>
+      sync: ${s.sync_id} &nbsp; t_off: ${s.time_offset_ms} ms<br/>
+      lat: ${lat.toFixed(6)}<br/>lon: ${lon.toFixed(6)}<br/>
+      hdg: ${s.heading?.toFixed(3) ?? 'N/A'} rad<br/>
+      cov: ${s.cov_pos ?? 'N/A'}<br/>
+      spdX: ${s.speed_x ?? 'N/A'} mm/s
+    `;
+    popup.setContent(popupHtml);
+  } else {
+    // optionally bind a popup if you want
+    m.bindPopup(`<strong>ID ${s.id}</strong><br/>lat: ${lat.toFixed(6)} lon: ${lon.toFixed(6)}`);
+  }
 }
 
 // ensure map is initialized once DOM is ready

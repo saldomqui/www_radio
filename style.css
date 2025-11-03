@@ -25,7 +25,7 @@ main {
     margin-right: 224px;     /* reserve space for the right tree (tree width + gap) */
 }
 
-/* full-size map inside main */
+/* full-size map inside main (unchanged) */
 #map {
     position: absolute;
     top: 0;
@@ -112,4 +112,29 @@ input[type="number"] {
 /* ensure main area doesn't hide behind the sidebar on smaller screens */
 @media (min-width: 820px) {
     main { margin-right: 224px; }
+}
+
+/* robot marker (SVG arrow) and ID label */
+.robot-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none; /* let clicks pass to Leaflet marker */
+  transform-origin: center center;
+}
+.robot-marker svg {
+  width: 28px;
+  height: 28px;
+  display: block;
+  /* arrow will be rotated by inline style on the svg element */
+}
+.robot-label {
+  color: #fff;
+  background: rgba(0,0,0,0.45);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
 }
