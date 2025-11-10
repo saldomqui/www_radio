@@ -23,6 +23,25 @@ const textEncoder = new TextEncoder();
 let textBuffer = '';
 let runSent = false;
 
+// Friendly label for a Web Serial port (uses getInfo() when available)
+async function getPortLabel(port) {
+    if (!port) return 'unknown device';
+    try {
+        if (typeof port.getInfo === 'function') {
+            const info = port.getInfo() || {};
+            const vid = info.usbVendorId ? '0x' + info.usbVendorId.toString(16).padStart(4, '0') : '';
+            const pid = info.usbProductId ? '0x' + info.usbProductId.toString(16).padStart(4, '0') : '';
+            if (vid || pid) return `USB ${vid}${vid && pid ? ':' : ''}${pid}`.trim();
+        }
+        // some implementations expose non-standard properties
+        if (port.friendlyName) return String(port.friendlyName);
+        if (port.serialNumber) return String(port.serialNumber);
+    } catch (e) {
+        console.warn('getPortLabel error', e);
+    }
+    return 'serial device';
+}
+
 tabMapInput.addEventListener('change', syncTabFromInputs);
 tabTermInput.addEventListener('change', syncTabFromInputs);
 
