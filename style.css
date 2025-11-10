@@ -1,3 +1,73 @@
+/* Layout: header | content (main + tree) | status */
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+/* Create a 2-column grid: main (fluid) | tree (sidebar) */
+body {
+  display: grid;
+  grid-template-columns: 1fr minmax(220px, 380px); /* left column fluid, right column (tree) min..max */
+  grid-template-rows: auto 1fr auto;               /* header, content, status */
+  grid-template-areas:
+    "header header"
+    "main   tree"
+    "status status";
+  height: 100vh;
+}
+
+/* header spans both columns */
+header {
+  grid-area: header;
+  z-index: 10;
+}
+
+/* main (map/terminal) in left column */
+main {
+  grid-area: main;
+  position: relative;
+  overflow: hidden;
+  /* ensure child panels fill available area */
+  min-width: 0; /* allow shrinking inside grid */
+}
+
+/* tree in the right column and will expand up to max set above */
+aside#tree {
+  grid-area: tree;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 12px;
+  border-left: 1px solid rgba(0,0,0,0.08);
+  background: #fafafa;
+}
+
+/* status bar spans both columns */
+#status {
+  grid-area: status;
+  position: relative;
+  left: 0;
+  right: 0;
+}
+
+/* Ensure map/terminal panels occupy full height of the main grid cell */
+#map, #terminal, #panels, #map-panel, #term-panel {
+  height: 100%;
+  width: 100%;
+}
+
+/* Tweak responsive behavior: on narrow screens stack tree below main */
+@media (max-width: 900px) {
+  body {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "main"
+      "tree"
+      "status";
+  }
+  aside#tree { border-left: none; border-top: 1px solid rgba(0,0,0,0.06); }
+}
+
 body {
     font-family: monospace;
     margin: 0;
@@ -194,25 +264,58 @@ input[type="number"] {
   color: #111;
 }
 
-/* checked state: the label immediately following the checked input */
+/* Radio-style tab labels (looks like radio checkbox with label) */
+.radio-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  color: #ddd;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+}
+
+/* fake radio control */
+.radio-tab-label::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #9aa;
+  background: transparent;
+  box-sizing: border-box;
+  display: inline-block;
+  flex: 0 0 14px;
+}
+
+/* checked state: target label immediately following the checked input */
 #tab-map:checked + label[for="tab-map"],
 #tab-term:checked + label[for="tab-term"] {
   background: #2b6;
   color: #031;
   border-color: #1a5;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.2);
 }
 
-/* optional focus/hover styles */
-.tabs .tab:hover,
-.tabs .tab:focus {
-  outline: none;
+/* fill inner dot when checked */
+#tab-map:checked + label[for="tab-map"]::before,
+#tab-term:checked + label[for="tab-term"]::before {
+  background: radial-gradient(circle at center, #031 40%, transparent 41%);
+  border-color: #031;
+}
+
+/* hover/focus */
+.radio-tab-label:hover,
+.radio-tab-label:focus {
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
 }
 
-/* keep accessibility indicator */
-.tabs .tab[aria-selected="true"] { font-weight: 600; }
+/* keep layout consistent with existing .tabs */
+.tabs { display: inline-flex; gap: 8px; align-items: center; margin-top: 8px; }
 
 /* Map / terminal containers should share the same area */
 #map, #terminal {
