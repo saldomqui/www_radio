@@ -41,11 +41,19 @@ main {
 /* tree in the right column and will expand up to max set above */
 aside#tree {
   grid-area: tree;
+  /* placed by the grid (grid-area: tree). Let it fill the right column */
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
   overflow: auto;
-  box-sizing: border-box;
+  background: #0f0f0f;
+  border-left: 1px solid #222;
+  border-radius: 0;
   padding: 12px;
-  border-left: 1px solid rgba(0,0,0,0.08);
-  background: #000000;
+  color: #ddd;
+  box-shadow: none;
+  z-index: 2;
 }
 
 /* status bar spans both columns */
@@ -154,21 +162,21 @@ input[type="number"] {
     color: #fff;
 }
 
-/* right sidebar tree */
+/* right sidebar tree (use grid placement instead of fixed positioning) */
 #tree {
-    position: fixed;
-    right: 12px;
-    top: 72px; /* below header */
-    width: 210px; /* increased ~30% */
-    max-height: calc(100vh - 84px);
-    overflow: auto;
-    background: #0f0f0f;
-    border: 1px solid #222;
-    border-radius: 6px;
-    padding: 8px;
-    color: #ddd;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.6);
-    z-index: 30;
+  /* placed by the grid (grid-area: tree). Let it fill the right column */
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  overflow: auto;
+  background: #0f0f0f;
+  border-left: 1px solid #222;
+  border-radius: 0;
+  padding: 12px;
+  color: #ddd;
+  box-shadow: none;
+  z-index: 2;
 }
 
 #tree h3 {
@@ -194,9 +202,9 @@ input[type="number"] {
     background: #161616;
 }
 
-/* ensure main area doesn't hide behind the sidebar on smaller screens */
+/* remove manual main right-margin that compensated for the fixed sidebar */
 @media (min-width: 820px) {
-    main { margin-right: 215px; }
+  main { margin-right: 0; }
 }
 
 /* robot marker (SVG arrow) and ID label */
