@@ -24,7 +24,7 @@ let textBuffer = '';
 let runSent = false;
 
 // terminal line buffer (oldest removed when limit exceeded)
-const TERMINAL_MAX_LINES = 1000;
+const TERMINAL_MAX_LINES = 100;
 const terminalLines = [];
 
 tabMap.addEventListener('click', () => showTab('map'));

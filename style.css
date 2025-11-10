@@ -164,6 +164,20 @@ body {
     border-radius: 4px;
 }
 
+/* disabled appearance for .btn */
+.btn:disabled,
+.btn[disabled],
+.btn.disabled,
+.btn[aria-disabled="true"] {
+    background: #777 !important;
+    color: #eee !important;
+    opacity: 0.75;
+    cursor: not-allowed;
+    pointer-events: none;
+    box-shadow: none;
+    border: 1px solid #666;
+}
+
 .btn.danger {
     background: #c44;
     color: #fff;
