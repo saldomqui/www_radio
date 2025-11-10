@@ -1,3 +1,35 @@
+/* global box-sizing and prevent horizontal overflow */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* keep page exactly within viewport width */
+html, body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden; /* hide any accidental horizontal overflow */
+}
+
+/* ensure grid children can shrink instead of forcing horizontal scroll */
+main, aside#tree, header, #panels {
+  min-width: 0;
+}
+
+/* ensure no element uses 100vw (which can overflow when scrollbars appear) */
+:root {
+  --safe-100: 100%;
+}
+
+/* optional: make status bar width respect container */
+#status {
+  left: 0;
+  right: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* Layout: header | content (main + tree) | status */
 html, body {
   height: 100%;
