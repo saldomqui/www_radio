@@ -764,28 +764,3 @@ async function getPortLabel(port) {
 document.addEventListener('DOMContentLoaded', () => {
     initMap();
 });
-(function ensureMainFitsViewport() {
-    function update() {
-        const header = document.querySelector('header');
-        const status = document.getElementById('status');
-        const main = document.querySelector('main');
-        if (!main) return;
-        const headerH = header ? Math.ceil(header.getBoundingClientRect().height) : 0;
-        const statusH = status ? Math.ceil(status.getBoundingClientRect().height) : 0;
-        const available = window.innerHeight - headerH - statusH;
-        main.style.height = (available >= 0 ? available : 0) + 'px';
-        // keep map/terminal filling main
-        const map = document.getElementById('map');
-        const term = document.getElementById('terminal');
-        if (map) { map.style.height = '100%'; map.style.width = '100%'; }
-        if (term) { term.style.height = '100%'; term.style.width = '100%'; }
-        // avoid page-level horizontal scroll
-        document.documentElement.style.overflowX = 'hidden';
-        document.body.style.overflowX = 'hidden';
-    }
-    window.addEventListener('resize', update);
-    document.addEventListener('DOMContentLoaded', update);
-    // run a couple times to catch late layout changes
-    setTimeout(update, 100);
-    setTimeout(update, 400);
-})();

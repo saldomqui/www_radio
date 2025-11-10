@@ -18,7 +18,8 @@ html, body {
 /* page grid: header (auto) | main (flex) | status (auto) ; tree is right column */
 body {
   display: grid;
-  grid-template-columns: 1fr minmax(220px, 380px); /* left = main, right = tree */
+  /* left column is fluid, right column is the tree with fixed width */
+  grid-template-columns: 1fr 300px; /* change 300px to desired tree width */
   grid-template-rows: auto 1fr auto;               /* header | main (fills) | status */
   grid-template-areas:
     "header header"
@@ -27,6 +28,24 @@ body {
   height: 100vh;
   background: #0b0b0b;
   color: #eee;
+}
+
+/* ensure main actually fills the middle grid cell (no extra margins/padding cause overflow) */
+main {
+  grid-area: main;
+  position: relative;
+  min-width: 0;      /* allow shrinking inside grid */
+  min-height: 0;
+  overflow: hidden;  /* panels inside handle their own scrolling */
+}
+
+/* tree occupies the right column and has fixed width from grid-template-columns */
+aside#tree {
+  grid-area: tree;
+  position: relative;
+  overflow: auto;
+  box-sizing: border-box;
+  height: 100%;
 }
 
 /* contain panels so they can't force page width/height */
@@ -55,26 +74,21 @@ aside#tree { grid-area: tree; overflow: auto; min-width: 0; }
 /* make the map/terminal panels fill the main cell and scroll internally */
 #map, #terminal, #map-panel, #term-panel, #panels {
   position: absolute;
-  inset: 0;
-  overflow: auto;
-  height: 100%;
+  inset: 0;      /* top:0; right:0; bottom:0; left:0; inside main */
   width: 100%;
-}
-
-/* map should not show its own scrollbars (Leaflet handles panning) */
-#map {
-  position: absolute;
-  inset: 0;
-  overflow: hidden; /* remove vertical and horizontal scrollbars */
-}
-
-/* terminal keeps internal vertical scrolling only */
-#terminal {
-  position: absolute;
-  inset: 0;
-  overflow: auto; /* allow vertical scroll for logs */
-  padding: 12px;
+  height: 100%;
   box-sizing: border-box;
+}
+
+/* map itself should not produce scrollbars */
+#map {
+  overflow: hidden;
+}
+
+/* terminal may scroll vertically but not force main size */
+#terminal {
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* internal content inside main should be allowed to scroll */
