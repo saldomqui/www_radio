@@ -152,3 +152,61 @@ input[type="number"] {
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* Tabs */
+.tabs {
+  display: inline-flex;
+  gap: 8px;
+  margin: 8px 0 0 0;
+}
+.tab-btn {
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.tab-btn[aria-selected="true"],
+.tab-btn.active {
+  background: #2b6;
+  color: #031;
+  border-color: #1a5;
+}
+.tab-btn[aria-selected="false"] {
+  opacity: 0.9;
+}
+
+/* Map / terminal containers should share the same area */
+#map, #terminal {
+  position: absolute;
+  left: 0;
+  right: 300px; /* leave room for the right-side tree if present */
+  top: 70px;    /* account for header height; adjust if header taller */
+  bottom: 36px; /* account for status bar height */
+  overflow: auto;
+}
+
+/* terminal hidden by default */
+.hidden { display: none; }
+
+/* terminal styling */
+#terminal {
+  background: #0b0b0c;
+  color: #e6e6e6;
+  padding: 12px;
+  box-sizing: border-box;
+}
+.terminal-pre {
+  margin: 0;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+/* ensure map container displays when active */
+#map { display: block; }

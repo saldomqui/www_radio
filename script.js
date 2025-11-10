@@ -12,14 +12,66 @@ const disconnectBtn = document.getElementById('disconnect');
 const statusEl = document.getElementById('status');
 const deviceNameEl = document.getElementById('deviceName');
 const baudInput = document.getElementById('baud');
+const tabMap = document.getElementById('tab-map');
+const tabTerm = document.getElementById('tab-term');
+const mapEl = document.getElementById('map');
+const termEl = document.getElementById('terminal');
+const termContent = document.getElementById('terminalContent');
+
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 let textBuffer = '';
 let runSent = false;
 
+tabMap.addEventListener('click', () => showTab('map'));
+tabTerm.addEventListener('click', () => showTab('term'));
+
+
+// default
+showTab('map');
+
 function setStatus(s) { if (statusEl) statusEl.textContent = 'status: ' + s; }
 
+// append bytes (ArrayBuffer / Uint8Array) to terminal in HEX
+window.appendHex = function appendHex(data, { prefix = '', spacer = ' ', addNewline = true } = {}) {
+    try {
+        let bytes;
+        if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+        else if (ArrayBuffer.isView(data)) bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        else if (Array.isArray(data)) bytes = Uint8Array.from(data);
+        else {
+            // fallback: try to handle string
+            const s = String(data);
+            termContent.textContent += prefix + s + (addNewline ? '\n' : '');
+            termContent.scrollTop = termContent.scrollHeight;
+            return;
+        }
+        const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(spacer);
+        termContent.textContent += prefix + hex + (addNewline ? '\n' : '');
+        termContent.scrollTop = termContent.scrollHeight;
+    } catch (e) {
+        console.error('appendHex error', e);
+    }
+};
+
+function showTab(name) {
+    if (name === 'map') {
+        tabMap.setAttribute('aria-selected', 'true'); tabMap.classList.add('active');
+        tabTerm.setAttribute('aria-selected', 'false'); tabTerm.classList.remove('active');
+        mapEl.style.display = 'block';
+        termEl.style.display = 'none';
+        // if using Leaflet, invalidate size when showing map
+        if (window.map && typeof window.map.invalidateSize === 'function') {
+            setTimeout(() => window.map.invalidateSize(), 200);
+        }
+    } else {
+        tabMap.setAttribute('aria-selected', 'false'); tabMap.classList.remove('active');
+        tabTerm.setAttribute('aria-selected', 'true'); tabTerm.classList.add('active');
+        mapEl.style.display = 'none';
+        termEl.style.display = 'block';
+    }
+}
 
 async function writeString(s) {
     if (!writer) return;
@@ -132,6 +184,8 @@ async function readLoop() {
                         const expectedHex = '0x' + expected.toString(16).padStart(4, '0').toUpperCase();
                         console.warn(`Checksum mismatch for message id=${msgData[1]}: actual=${actualHex} expected=${expectedHex}`);
                     }
+                    if (termEl.style.display === 'block')
+                        window.appendHex(msgData, { prefix: '' });
                 }
 
                 // remove consumed bytes up to end of this message
@@ -286,7 +340,6 @@ disconnectBtn.addEventListener('click', disconnect);
         if (ports.length > 0) deviceNameEl.textContent = 'Choose device (click Connect)';
     } catch (e) { /* ignore */ }
 })();
-
 
 /**
  * Parse a status message status data struct.

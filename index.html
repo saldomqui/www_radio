@@ -28,10 +28,20 @@
             <button id="connect" class="btn">Connect</button>
             <button id="disconnect" class="btn danger" disabled>Disconnect</button>
         </div>
+
+        <!-- Tabs: Map / Terminal -->
+        <div class="tabs" role="tablist" aria-label="View tabs">
+            <button id="tab-map" class="tab-btn" role="tab" aria-selected="true">Map</button>
+            <button id="tab-term" class="tab-btn" role="tab" aria-selected="false">Terminal</button>
+        </div>
     </header>
     <main>
         <!-- replaced the old log panel with a full-page map container -->
         <div id="map" role="region" aria-label="Map"></div>
+        <!-- terminal area (hidden by default) -->
+        <div id="terminal" role="region" aria-label="Terminal" class="hidden">
+            <pre id="terminalContent" aria-live="polite" class="terminal-pre"></pre>
+        </div>
     </main>
     <div id="status" role="status" aria-live="polite">status: idle</div>
 
