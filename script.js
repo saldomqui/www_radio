@@ -23,6 +23,10 @@ const textEncoder = new TextEncoder();
 let textBuffer = '';
 let runSent = false;
 
+// terminal line buffer (oldest removed when limit exceeded)
+const TERMINAL_MAX_LINES = 1000;
+const terminalLines = [];
+
 tabMap.addEventListener('click', () => showTab('map'));
 tabTerm.addEventListener('click', () => showTab('term'));
 
@@ -40,14 +44,18 @@ window.appendHex = function appendHex(data, { prefix = '', spacer = ' ', addNewl
         else if (ArrayBuffer.isView(data)) bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
         else if (Array.isArray(data)) bytes = Uint8Array.from(data);
         else {
-            // fallback: try to handle string
+            // fallback: treat as string line
             const s = String(data);
-            termContent.textContent += prefix + s + (addNewline ? '\n' : '');
+            terminalLines.push(prefix + s);
+            while (terminalLines.length > TERMINAL_MAX_LINES) terminalLines.shift();
+            termContent.textContent = terminalLines.join('\n') + (addNewline ? '\n' : '');
             termContent.scrollTop = termContent.scrollHeight;
             return;
         }
         const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(spacer);
-        termContent.textContent += prefix + hex + (addNewline ? '\n' : '');
+        terminalLines.push(prefix + hex);
+        while (terminalLines.length > TERMINAL_MAX_LINES) terminalLines.shift();
+        termContent.textContent = terminalLines.join('\n') + (addNewline ? '\n' : '');
         termContent.scrollTop = termContent.scrollHeight;
     } catch (e) {
         console.error('appendHex error', e);
