@@ -25,7 +25,16 @@ body {
 }
 
 /* place regions */
-header { grid-area: header; z-index: 10; }
+header {
+  grid-area: header;
+  z-index: 10;
+  display: flex;               /* single-row header */
+  align-items: center;
+  justify-content: space-between; /* left controls / right tabs */
+  gap: 12px;
+  padding: 8px 12px;
+  flex-wrap: nowrap;           /* keep controls and tabs on one line */
+}
 main   { grid-area: main; position: relative; overflow: hidden; min-width: 0; }
 aside#tree { grid-area: tree; overflow: auto; min-width: 0; }
 #status { grid-area: status; }
@@ -52,6 +61,7 @@ main > * { height: 100%; }
       "tree"
       "status";
   }
+  header { flex-wrap: wrap; justify-content: flex-start; }
   aside#tree { border-left: none; border-top: 1px solid rgba(0,0,0,0.06); }
 }
 
@@ -77,8 +87,8 @@ body {
   margin: 0;
   margin-left: 12px;
   align-items: center;
-  justify-self: end;
-  flex: 0 0 auto;          /* don't grow, stay at right */
+  flex: 0 0 auto;           /* don't grow, stay at right */
+  display: inline-flex;
 }
 
 /* full-size map inside main (unchanged) */
