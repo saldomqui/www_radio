@@ -31,8 +31,11 @@
 
         <!-- Tabs: Map / Terminal -->
         <div class="tabs" role="tablist" aria-label="View tabs">
-            <button id="tab-map" class="tab-btn" role="tab" aria-selected="true">Map</button>
-            <button id="tab-term" class="tab-btn" role="tab" aria-selected="false">Terminal</button>
+            <input type="radio" name="viewtab" id="tab-map" checked hidden>
+            <label class="tab" for="tab-map" role="tab" aria-controls="map">Map</label>
+
+            <input type="radio" name="viewtab" id="tab-term" hidden>
+            <label class="tab" for="tab-term" role="tab" aria-controls="terminal">Terminal</label>
         </div>
     </header>
     <main>

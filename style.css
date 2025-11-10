@@ -22,7 +22,7 @@ main {
     flex: 1;
     overflow: hidden;        /* let map handle its own scrolling */
     position: relative;      /* so #map absolute is contained inside main */
-    margin-right: 224px;     /* reserve space for the right tree (tree width + gap) */
+    margin-right: 200px;     /* reserve space for the right tree (tree width + gap) */
 }
 
 /* full-size map inside main (unchanged) */
@@ -125,7 +125,7 @@ input[type="number"] {
 
 /* ensure main area doesn't hide behind the sidebar on smaller screens */
 @media (min-width: 820px) {
-    main { margin-right: 224px; }
+    main { margin-right: 200px; }
 }
 
 /* robot marker (SVG arrow) and ID label */
@@ -176,6 +176,43 @@ input[type="number"] {
 .tab-btn[aria-selected="false"] {
   opacity: 0.9;
 }
+
+/* radio-tab styling */
+.tabs { display: inline-flex; gap: 8px; align-items: center; margin-top: 8px; }
+
+.tabs input[name="viewtab"] { display: none; }
+
+.tabs .tab {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #cfcfcf;
+  background: #fff;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  color: #111;
+}
+
+/* checked state: the label immediately following the checked input */
+#tab-map:checked + label[for="tab-map"],
+#tab-term:checked + label[for="tab-term"] {
+  background: #2b6;
+  color: #031;
+  border-color: #1a5;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+/* optional focus/hover styles */
+.tabs .tab:hover,
+.tabs .tab:focus {
+  outline: none;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+/* keep accessibility indicator */
+.tabs .tab[aria-selected="true"] { font-weight: 600; }
 
 /* Map / terminal containers should share the same area */
 #map, #terminal {
