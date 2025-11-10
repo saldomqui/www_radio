@@ -1,112 +1,48 @@
-/* global box-sizing and prevent horizontal overflow */
+/* ensure box-sizing and full-height viewport */
 *,
 *::before,
-*::after {
-  box-sizing: border-box;
-}
+*::after { box-sizing: border-box; }
 
-/* keep page exactly within viewport width */
-html, body {
-  width: 100%;
-  max-width: 100%;
-  overflow-x: hidden; /* hide any accidental horizontal overflow */
-}
-
-/* ensure grid children can shrink instead of forcing horizontal scroll */
-main, aside#tree, header, #panels {
-  min-width: 0;
-}
-
-/* ensure no element uses 100vw (which can overflow when scrollbars appear) */
-:root {
-  --safe-100: 100%;
-}
-
-/* optional: make status bar width respect container */
-#status {
-  left: 0;
-  right: 0;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-/* Layout: header | content (main + tree) | status */
 html, body {
   height: 100%;
+  width: 100%;
   margin: 0;
+  overflow: hidden; /* prevent body-level scroll; main will handle internal scrolling */
 }
 
-/* Create a 2-column grid: main (fluid) | tree (sidebar) */
+/* page grid: header (auto) | main (flex) | status (auto) ; tree is right column */
 body {
   display: grid;
-  grid-template-columns: 1fr minmax(220px, 380px); /* left column fluid, right column (tree) min..max */
-  grid-template-rows: auto 1fr auto;               /* header, content, status */
+  grid-template-columns: 1fr minmax(220px, 380px); /* left = main, right = tree */
+  grid-template-rows: auto 1fr auto;               /* header | main (fills) | status */
   grid-template-areas:
     "header header"
     "main   tree"
     "status status";
   height: 100vh;
+  background: #0b0b0b;
+  color: #eee;
 }
 
-/* header spans both columns */
-header {
-  grid-area: header;
-  z-index: 10;
-  padding: 8px 12px;        /* smaller top/bottom padding */
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
+/* place regions */
+header { grid-area: header; z-index: 10; }
+main   { grid-area: main; position: relative; overflow: hidden; min-width: 0; }
+aside#tree { grid-area: tree; overflow: auto; min-width: 0; }
+#status { grid-area: status; }
 
-/* main (map/terminal) in left column */
-main {
-  grid-area: main;
-  position: relative;
-  overflow: hidden;
-  /* ensure child panels fill available area */
-  min-width: 0; /* allow shrinking inside grid */
-  padding-top: 6px;         /* small gap for breathing room */
-  margin-top: 0;
-}
-
-/* tree in the right column and will expand up to max set above */
-aside#tree {
-  grid-area: tree;
-  /* placed by the grid (grid-area: tree). Let it fill the right column */
-  position: relative;
-  width: 100%;
-  max-width: 100%;
-  height: 100%;
+/* make the map/terminal panels fill the main cell and scroll internally */
+#map, #terminal, #map-panel, #term-panel, #panels {
+  position: absolute;
+  inset: 0;
   overflow: auto;
-  background: #0f0f0f;
-  border-left: 1px solid #222;
-  border-radius: 0;
-  padding: 12px;
-  color: #ddd;
-  box-shadow: none;
-  z-index: 2;
-}
-
-/* status bar spans both columns */
-#status {
-  grid-area: status;
-  position: relative;
-  left: 0;
-  right: 0;
-}
-
-/* Ensure map/terminal panels occupy full height of the main grid cell */
-#map, #terminal, #panels, #map-panel, #term-panel {
   height: 100%;
   width: 100%;
-  position: relative !important;
-  top: 0 !important;
-  height: calc(100% - 6px);
-  margin: 0;
 }
 
-/* Tweak responsive behavior: on narrow screens stack tree below main */
+/* internal content inside main should be allowed to scroll */
+main > * { height: 100%; }
+
+/* small screens: stack tree under main */
 @media (max-width: 900px) {
   body {
     grid-template-columns: 1fr;
@@ -133,13 +69,16 @@ body {
   align-items: center;
   gap: 10px;
   margin: 0;                /* remove extra margins */
+  flex: 0 1 auto;          /* allow controls to shrink if needed */
 }
 
-/* tabs should sit close to controls */
+/* tabs should sit at the right side of the header */
 .tabs {
-  margin-top: 0;
-  margin-left: 6px;
+  margin: 0;
+  margin-left: 12px;
   align-items: center;
+  justify-self: end;
+  flex: 0 0 auto;          /* don't grow, stay at right */
 }
 
 /* full-size map inside main (unchanged) */
