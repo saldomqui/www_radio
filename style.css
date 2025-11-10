@@ -376,5 +376,28 @@ input[type="number"] {
   overflow-y: auto;
 }
 
+/* enforce: no scrollbars on map, vertical-only on terminal */
+#map {
+  overflow: hidden !important;     /* no scrollbars, Leaflet handles panning */
+  -webkit-overflow-scrolling: auto;
+  /* hide any browser scrollbar visuals just in case */
+  scrollbar-width: none; /* Firefox */
+}
+#map::-webkit-scrollbar { display: none; } /* WebKit browsers */
+
+/* terminal: vertical scroll only, prevent horizontal overflow */
+#terminal {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ensure inner content does not force horizontal scrolling */
+#terminal, #terminal * {
+  box-sizing: border-box;
+  max-width: 100%;
+  word-break: break-word;
+}
+
 /* ensure map container displays when active */
 #map { display: block; }

@@ -18,7 +18,6 @@ const mapEl = document.getElementById('map');
 const termEl = document.getElementById('terminal');
 const termContent = document.getElementById('terminalContent');
 
-
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 let textBuffer = '';
@@ -185,7 +184,7 @@ async function readLoop() {
                         console.warn(`Checksum mismatch for message id=${msgData[1]}: actual=${actualHex} expected=${expectedHex}`);
                     }
                     if (termEl.style.display === 'block')
-                        window.appendHex(msgData, { prefix: '' });
+                         window.appendHex(msgData, { prefix: '' });
                 }
 
                 // remove consumed bytes up to end of this message
