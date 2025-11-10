@@ -38,7 +38,7 @@ aside#tree {
   box-sizing: border-box;
   padding: 12px;
   border-left: 1px solid rgba(0,0,0,0.08);
-  background: #fafafa;
+  background: #000000;
 }
 
 /* status bar spans both columns */
@@ -92,7 +92,7 @@ main {
     flex: 1;
     overflow: hidden;        /* let map handle its own scrolling */
     position: relative;      /* so #map absolute is contained inside main */
-    margin-right: 170px;     /* reserve space for the right tree (tree width + gap) */
+    margin-right: 215px;     /* reserve space for the right tree (tree width + gap) */
 }
 
 /* full-size map inside main (unchanged) */
@@ -158,7 +158,7 @@ input[type="number"] {
     position: fixed;
     right: 12px;
     top: 72px; /* below header */
-    width: 150px;
+    width: 195px; /* increased ~30% */
     max-height: calc(100vh - 84px);
     overflow: auto;
     background: #0f0f0f;
@@ -195,7 +195,7 @@ input[type="number"] {
 
 /* ensure main area doesn't hide behind the sidebar on smaller screens */
 @media (min-width: 820px) {
-    main { margin-right: 170px; }
+    main { margin-right: 215px; }
 }
 
 /* robot marker (SVG arrow) and ID label */
@@ -253,65 +253,51 @@ input[type="number"] {
 .tabs input[name="viewtab"] { display: none; }
 
 .tabs .tab {
-  display: inline-block;
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid #cfcfcf;
-  background: #fff;
-  cursor: pointer;
-  user-select: none;
-  font-size: 14px;
-  color: #111;
-}
-
-/* Radio-style tab labels (looks like radio checkbox with label) */
-.radio-tab-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 6px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.02);
+  background: transparent;
   color: #ddd;
   cursor: pointer;
   user-select: none;
   font-size: 14px;
+  border: 1px solid transparent;
 }
 
-/* fake radio control */
-.radio-tab-label::before {
+/* draw the radio circle before the label text */
+.tabs .tab::before {
   content: "";
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: 2px solid #9aa;
   background: transparent;
   box-sizing: border-box;
-  display: inline-block;
-  flex: 0 0 14px;
+  flex: 0 0 16px;
 }
 
-/* checked state: target label immediately following the checked input */
+/* checked state for the label and the inner dot */
 #tab-map:checked + label[for="tab-map"],
 #tab-term:checked + label[for="tab-term"] {
-  background: #2b6;
+  background: rgba(43,102,51,0.12);
   color: #031;
-  border-color: #1a5;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+  border-color: rgba(26,85,34,0.25);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
 }
 
-/* fill inner dot when checked */
 #tab-map:checked + label[for="tab-map"]::before,
 #tab-term:checked + label[for="tab-term"]::before {
-  background: radial-gradient(circle at center, #031 40%, transparent 41%);
+  background: radial-gradient(circle at center, #031 45%, transparent 46%);
   border-color: #031;
 }
 
-/* hover/focus */
-.radio-tab-label:hover,
-.radio-tab-label:focus {
+/* small hover/focus polish */
+.tabs .tab:hover,
+.tabs .tab:focus {
   transform: translateY(-1px);
+  border-color: rgba(255,255,255,0.04);
 }
 
 /* keep layout consistent with existing .tabs */
@@ -321,7 +307,7 @@ input[type="number"] {
 #map, #terminal {
   position: absolute;
   left: 0;
-  right: 300px; /* leave room for the right-side tree if present */
+  right: 215px; /* match main margin-right (tree width + gap) */
   top: 70px;    /* account for header height; adjust if header taller */
   bottom: 36px; /* account for status bar height */
   overflow: auto;
