@@ -177,6 +177,34 @@ input[type="number"] {
   opacity: 0.9;
 }
 
+/* Tabs (radio + label pattern) */
+.tabs {
+  display: inline-flex;
+  gap: 8px;
+  margin: 8px 0 0 0;
+  align-items: center;
+}
+
+.tabs .tab {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #cfcfcf;
+  background: #fff;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  color: #111;
+}
+
+#tab-map-input:checked + label[for="tab-map-input"],
+#tab-term-input:checked + label[for="tab-term-input"] {
+  background: #2b6;
+  color: #031;
+  border-color: #1a5;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
 /* Map / terminal containers should share the same area */
 #map, #terminal {
   position: absolute;
@@ -196,6 +224,7 @@ input[type="number"] {
   color: #e6e6e6;
   padding: 12px;
   box-sizing: border-box;
+  height: 100%;
 }
 .terminal-pre {
   margin: 0;
@@ -210,3 +239,31 @@ input[type="number"] {
 
 /* ensure map container displays when active */
 #map { display: block; }
+
+/* ensure map container fills panel */
+#map {
+  width: 100%;
+  height: 100%;
+}
+
+/* Show/hide panels using the radio inputs */
+#tab-map-input:checked ~ #panels #map-panel { display: block; }
+#tab-map-input:checked ~ #panels #term-panel { display: none; }
+
+#tab-term-input:checked ~ #panels #map-panel { display: none; }
+#tab-term-input:checked ~ #panels #term-panel { display: block; }
+
+/* Default hidden state (in case of CSS not applied) */
+#map-panel { display: block; }
+#term-panel { display: none; }
+
+/* Panel layout */
+#panels {
+  position: relative;
+  left: 0;
+  right: 300px; /* adjust to your layout */
+  top: 70px;    /* match header height if needed */
+  bottom: 36px; /* match status bar height */
+  height: calc(100vh - 70px - 36px); /* fallback */
+  overflow: hidden;
+}
