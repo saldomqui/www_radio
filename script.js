@@ -12,57 +12,21 @@ const disconnectBtn = document.getElementById('disconnect');
 const statusEl = document.getElementById('status');
 const deviceNameEl = document.getElementById('deviceName');
 const baudInput = document.getElementById('baud');
-const tabMapInput = document.getElementById('tab-map-input');
-const tabTermInput = document.getElementById('tab-term-input');
+const tabMap = document.getElementById('tab-map');
+const tabTerm = document.getElementById('tab-term');
 const mapEl = document.getElementById('map');
 const termEl = document.getElementById('terminal');
 const termContent = document.getElementById('terminalContent');
+
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 let textBuffer = '';
 let runSent = false;
 
-// Friendly label for a Web Serial port (uses getInfo() when available)
-async function getPortLabel(port) {
-    if (!port) return 'unknown device';
-    try {
-        if (typeof port.getInfo === 'function') {
-            const info = port.getInfo() || {};
-            const vid = info.usbVendorId ? '0x' + info.usbVendorId.toString(16).padStart(4, '0') : '';
-            const pid = info.usbProductId ? '0x' + info.usbProductId.toString(16).padStart(4, '0') : '';
-            if (vid || pid) return `USB ${vid}${vid && pid ? ':' : ''}${pid}`.trim();
-        }
-        // some implementations expose non-standard properties
-        if (port.friendlyName) return String(port.friendlyName);
-        if (port.serialNumber) return String(port.serialNumber);
-    } catch (e) {
-        console.warn('getPortLabel error', e);
-    }
-    return 'serial device';
-}
+tabMap.addEventListener('click', () => showTab('map'));
+tabTerm.addEventListener('click', () => showTab('term'));
 
-tabMapInput.addEventListener('change', syncTabFromInputs);
-tabTermInput.addEventListener('change', syncTabFromInputs);
-
-// keep labels in sync (labels are <label for="tab-*-input">)
-function setTabLabelState(name) {
-    const mapLabel = document.querySelector('label[for="tab-map-input"]');
-    const termLabel = document.querySelector('label[for="tab-term-input"]');
-    if (mapLabel) {
-        mapLabel.classList.toggle('active', name === 'map');
-        mapLabel.setAttribute('aria-selected', name === 'map' ? 'true' : 'false');
-    }
-    if (termLabel) {
-        termLabel.classList.toggle('active', name === 'term');
-        termLabel.setAttribute('aria-selected', name === 'term' ? 'true' : 'false');
-    }
-}
-
-function syncTabFromInputs() {
-    if (tabMapInput && tabMapInput.checked) showTab('map');
-    else showTab('term');
-}
 
 // default
 showTab('map');
@@ -93,16 +57,19 @@ window.appendHex = function appendHex(data, { prefix = '', spacer = ' ', addNewl
 
 function showTab(name) {
     if (name === 'map') {
+        tabMap.setAttribute('aria-selected', 'true'); tabMap.classList.add('active');
+        tabTerm.setAttribute('aria-selected', 'false'); tabTerm.classList.remove('active');
         mapEl.style.display = 'block';
         termEl.style.display = 'none';
-        setTabLabelState('map');
+        // if using Leaflet, invalidate size when showing map
         if (window.map && typeof window.map.invalidateSize === 'function') {
             setTimeout(() => window.map.invalidateSize(), 200);
         }
     } else {
+        tabMap.setAttribute('aria-selected', 'false'); tabMap.classList.remove('active');
+        tabTerm.setAttribute('aria-selected', 'true'); tabTerm.classList.add('active');
         mapEl.style.display = 'none';
         termEl.style.display = 'block';
-        setTabLabelState('term');
     }
 }
 
@@ -664,192 +631,136 @@ let activeCenteredId = null;
 
 // initialize the Leaflet map (called once)
 function initMap() {
-    if (!L || !L.map) return;
-    const container = document.getElementById('map');
-    if (!container) return;
+    if (map) return;
+    // default view (world)
+    map = L.map('map', { preferCanvas: true }).setView([0, 0], 2);
 
-    // prevent map context menu (right click)
-    container.addEventListener('contextmenu', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-    });
-
-    // create map instance
-    map = L.map(container, {
-        // prefer canvas renderer for performance
-        renderer: L.canvas(),
-        // enable touch interactions for mobile
-        touchZoom: true,
-        scrollWheelZoom: true,
-        doubleClickZoom: true,
-        // no panning inertia (better control for remote robots)
-        inertia: false,
-        // disable default marker zoom animation
-        zoomAnimation: false,
-        // fade in tiles on load
-        fadeAnimation: true,
-        // no zoom control (we use a custom one)
-        zoomControl: false,
-        // no attribution control (optional)
-        attributionControl: false
-    });
-
-    // workaround for Leaflet issue with empty div container:
-    // https://github.com/Leaflet/Leaflet/issues/7090
-    setTimeout(() => {
-        map.invalidateSize();
-    }, 100);
-
-    // register custom icon types
-    registerIcon('robot', L.icon({
-        //iconUrl: 'data/icons/robot.svg',
-        iconUrl: 'data/icons/robot.png',
-        iconSize: [40, 40],
-        iconAnchor: [20, 40],
-        //shadowUrl: 'data/icons/marker-shadow.png',
-        //shadowSize: [64, 64],
-        //shadowAnchor: [20, 40],
-        //className: 'leaflet-robot-icon'
-    }));
-
-    registerIcon('home', L.icon({
-        iconUrl: 'data/icons/home.png',
-        iconSize: [32, 32],
-        iconAnchor: [16, 32],
-    }));
-
-    // add default OSM basemap
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    // Satellite imagery (ESRI World Imagery). maxZoom 20 to allow house-level zoom.
+    L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+        name: 'GOOGLE_HYBRID_MAP',
+        maxZoom: 24,
+        maxNativeZoom: 21,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        id: 'mapbox.satellite',
     }).addTo(map);
+}
 
-    // custom zoom control
-    const zoomControl = L.control({ position: 'topright' });
-    zoomControl.onAdd = function () {
-        const div = L.DomUtil.create('div', 'leaflet-bar');
-        div.style.backgroundColor = 'white';
-        div.style.borderRadius = '4px';
-        div.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
-        div.style.cursor = 'pointer';
+// helper to create a DivIcon with rotated arrow + ID label
+function createRobotIcon(id, headingRad) {
+    // headingRad: radians
+    const deg = Number.isFinite(headingRad) ? (headingRad * 180 / Math.PI) : 0;
 
-        const zoomIn = L.DomUtil.create('div', 'leaflet-control-zoom-in', div);
-        zoomIn.title = 'Zoom in';
-        zoomIn.innerHTML = '+';
-        zoomIn.style.fontSize = '18px';
-        zoomIn.style.lineHeight = '22px';
-        zoomIn.style.textAlign = 'center';
-        zoomIn.style.padding = '0 6px';
+    // Fix: apply rotation = 90 - heading_degrees
+    // This corrects the 90° offset and inverts direction so increasing heading
+    // rotates the arrow in the expected (clockwise) sense.
+    let rot = 90 - deg;
+    const rotNorm = ((rot % 360) + 360) % 360;
 
-        const zoomOut = L.DomUtil.create('div', 'leaflet-control-zoom-out', div);
-        zoomOut.title = 'Zoom out';
-        zoomOut.innerHTML = '-';
-        zoomOut.style.fontSize = '18px';
-        zoomOut.style.lineHeight = '22px';
-        zoomOut.style.textAlign = 'center';
-        zoomOut.style.padding = '0 6px';
+    const svg = `
+    <svg viewBox="-12 -12 24 24" xmlns="http://www.w3.org/2000/svg"
+         style="transform: rotate(${rotNorm}deg); transform-origin: center;">
+      <!-- arrow shaft -->
+      <line x1="0" y1="6" x2="0" y2="-6" stroke="#ffd966" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- arrow head -->
+      <path d="M0 -9 L5 -4 L0 -6 L-5 -4 Z" fill="#ff6f61" stroke="#c84a3a" stroke-width="0.5"/>
+      <!-- center circle -->
+      <circle cx="0" cy="0" r="1.7" fill="#222"/>
+    </svg>
+  `;
+    const html = `<div class="robot-marker">${svg}<div class="robot-label">ID ${id}</div></div>`;
 
-        L.DomEvent.on(zoomIn, 'click', () => {
-            map.zoomIn();
-        });
-        L.DomEvent.on(zoomOut, 'click', () => {
-            map.zoomOut();
-        });
-
-        return div;
-    };
-    zoomControl.addTo(map);
-
-    // enable geolocation (if supported)
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(pos => {
-            const lat = pos.coords.latitude;
-            const lon = pos.coords.longitude;
-            const zoom = 14;
-            L.marker([lat, lon], { icon: getIcon('home') }).addTo(map);
-            map.setView([lat, lon], zoom);
-            firstLocationSet = true;
-        }, err => {
-            console.warn('Geolocation error:', err);
-        }, {
-            enableHighAccuracy: true,
-            maximumAge: 5000,
-            timeout: 10000
-        });
-    }
-
-    // handle map clicks (for testing)
-    map.on('click', (e) => {
-        console.log('Map clicked at', e.latlng);
-        L.marker(e.latlng, { icon: getIcon('robot') }).addTo(map);
+    return L.divIcon({
+        className: '',
+        html,
+        iconSize: [48, 28],
+        iconAnchor: [12, 12]
     });
 }
 
-// update or add a marker for the given status object
 function updateMapMarker(s) {
-    if (!map) return;
-    const id = Number(s.id);
-    const lat = s.latitude;
-    const lon = s.longitude;
-    const isHome = (s.drive_mode === 255);
+    if (!s || typeof s.latitude !== 'number' || typeof s.longitude !== 'number') return;
+    const lat = Number(s.latitude);
+    const lon = Number(s.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-    let marker = markers.get(id);
-    if (!marker) {
-        // create new marker
-        marker = L.marker([lat, lon], {
-            icon: getIcon(isHome ? 'home' : 'robot'),
-            //riseOnHover: true,
-            //zIndexOffset: 1000,
-        }).addTo(map);
-        markers.set(id, marker);
+    if (!map) initMap();
+
+    if (!firstLocationSet) {
+        try { map.setView([lat, lon], 19); } catch (e) { }
+        firstLocationSet = true;
+    }
+
+    let m = markers.get(s.id);
+    const icon = createRobotIcon(s.id, s.heading);
+
+    if (!m) {
+        m = L.marker([lat, lon], { icon, riseOnHover: true }).addTo(map);
+        markers.set(s.id, m);
+
+        // ensure popupclose disables following for this id
+        m.on('popupclose', () => {
+            if (activeCenteredId === Number(s.id)) activeCenteredId = null;
+        });
     } else {
-        // update existing marker position
-        marker.setLatLng([lat, lon]);
-        // update icon if drive mode changed
-        if (isHome) marker.setIcon(getIcon('home'));
-        else marker.setIcon(getIcon('robot'));
+        m.setLatLng([lat, lon]);
+        m.setIcon(icon);
     }
 
-    // keep map centered on active id (if any)
-    if (activeCenteredId === id) {
-        centerMapOnId(id);
+    // If this id is the active centered one, snap/map.setView to keep it centered (immediate)
+    if (activeCenteredId === Number(s.id)) {
+        try {
+            // avoid redundant setView calls if already centered
+            if (!isMapCenteredAt(lat, lon, 2)) {
+                map.setView([lat, lon], map.getZoom(), { animate: false });
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    // update popup content if present
+    const popup = m.getPopup();
+    if (popup) {
+        const popupHtml = `
+      <strong>ID ${s.id}</strong><br/>
+      sync: ${s.sync_id} &nbsp; t_off: ${s.time_offset_ms} ms<br/>
+      lat: ${lat.toFixed(6)}<br/>lon: ${lon.toFixed(6)}<br/>
+      hdg: ${s.heading?.toFixed(3) ?? 'N/A'} rad<br/>
+      cov: ${s.cov_pos.toFixed(2) ?? 'N/A'}<br/>
+      spdX: ${s.speed_x.toFixed(2) ?? 'N/A'} mm/s
+    `;
+        popup.setContent(popupHtml);
+    } else {
+        m.bindPopup(`<strong>ID ${s.id}</strong><br/>lat: ${lat.toFixed(6)} lon: ${lon.toFixed(6)}`);
     }
 }
 
-// register custom icon types
-const iconRegistry = new Map();
-function registerIcon(name, icon) {
-    iconRegistry.set(name, icon);
+// return a short human-friendly label for the selected port (prefer product/label name)
+async function getPortLabel(port) {
+    if (!port) return 'device';
+    try {
+        // prefer explicit friendly fields if present
+        if (port.productName) return String(port.productName);
+        if (port.label) return String(port.label);
+        if (port.name) return String(port.name);
+
+        // some implementations expose productName inside getInfo()
+        if (typeof port.getInfo === 'function') {
+            const info = port.getInfo();
+            if (info && info.productName) return String(info.productName);
+            // fallback to VID:PID only if no friendly name exists
+            const parts = [];
+            if (info && info.usbVendorId != null) parts.push('VID_' + info.usbVendorId.toString(16).padStart(4, '0').toUpperCase());
+            if (info && info.usbProductId != null) parts.push('PID_' + info.usbProductId.toString(16).padStart(4, '0').toUpperCase());
+            if (parts.length) return parts.join(':');
+        }
+    } catch (e) { /* ignore */ }
+    return 'device';
 }
-function getIcon(name) {
-    return iconRegistry.get(name) || null;
-}
 
-// custom marker example (for testing)
-//L.marker([0, 0], { icon: getIcon('robot') }).addTo(map);
+// Usage (after port = await navigator.serial.requestPort()):
+// const label = await getPortLabel(port);
+// deviceNameEl.textContent = `${label}: connected`;
 
-// DEBUG: show all received data as HEX in terminal
-//window.appendHex = function (data) { window.appendHex(data, { prefix: '' }); };
-
-// test with fake data (remove in production)
-//setInterval(() => {
-//    const id = Math.floor(Math.random() * 1000);
-//    const status = {
-//        id,
-//        sync_id: id,
-//        time_offset_ms: Math.floor(Math.random() * 1000),
-//        latitude: 37.7749 + (Math.random() - 0.5) * 0.01,
-//        longitude: -122.4194 + (Math.random() - 0.5) * 0.01,
-//        heading: (Math.random() * 2 * Math.PI),
-//        cov_pos: Math.random() * 10,
-//        speed_x: (Math.random() - 0.5) * 2000,
-//        speed_y: (Math.random() - 0.5) * 2000,
-//        rot_speed: (Math.random() - 0.5) * 2000,
-//        drive_mode: Math.floor(Math.random() * 256),
-//        aux_data_status: Math.floor(Math.random() * 256)
-//    };
-//    updateStatusArray(status);
-//}, 1000);
-
-// DEBUG: test disconnect/reconnect sequence
-//setTimeout(() => { disconnect(); setTimeout(connect, 2000); }, 5000);
+// ensure map is initialized once DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    initMap();
+});
