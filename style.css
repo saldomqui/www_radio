@@ -20,6 +20,11 @@ body {
 header {
   grid-area: header;
   z-index: 10;
+  padding: 8px 12px;        /* smaller top/bottom padding */
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 /* main (map/terminal) in left column */
@@ -29,6 +34,8 @@ main {
   overflow: hidden;
   /* ensure child panels fill available area */
   min-width: 0; /* allow shrinking inside grid */
+  padding-top: 6px;         /* small gap for breathing room */
+  margin-top: 0;
 }
 
 /* tree in the right column and will expand up to max set above */
@@ -53,6 +60,10 @@ aside#tree {
 #map, #terminal, #panels, #map-panel, #term-panel {
   height: 100%;
   width: 100%;
+  position: relative !important;
+  top: 0 !important;
+  height: calc(100% - 6px);
+  margin: 0;
 }
 
 /* Tweak responsive behavior: on narrow screens stack tree below main */
@@ -78,21 +89,19 @@ body {
     color: #eee;
 }
 
-header {
-    background: #111;
-    color: #fff;
-    padding: 10px;
-    display: flex;
-    gap: 10px;
-    align-items: center;
+/* controls area: keep items compact and vertically centered */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;                /* remove extra margins */
 }
 
-main {
-    padding: 0;              /* map should fill main, no extra padding */
-    flex: 1;
-    overflow: hidden;        /* let map handle its own scrolling */
-    position: relative;      /* so #map absolute is contained inside main */
-    margin-right: 215px;     /* reserve space for the right tree (tree width + gap) */
+/* tabs should sit close to controls */
+.tabs {
+  margin-top: 0;
+  margin-left: 6px;
+  align-items: center;
 }
 
 /* full-size map inside main (unchanged) */
@@ -138,12 +147,6 @@ main {
   box-sizing: border-box;
 }
 
-.controls {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
 input[type="number"] {
     width: 120px;
     padding: 6px;
@@ -158,7 +161,7 @@ input[type="number"] {
     position: fixed;
     right: 12px;
     top: 72px; /* below header */
-    width: 195px; /* increased ~30% */
+    width: 210px; /* increased ~30% */
     max-height: calc(100vh - 84px);
     overflow: auto;
     background: #0f0f0f;
@@ -259,7 +262,7 @@ input[type="number"] {
   padding: 6px 12px;
   border-radius: 8px;
   background: transparent;
-  color: #ddd;
+  color: #e6e6e6; /* brighter on dark background */
   cursor: pointer;
   user-select: none;
   font-size: 14px;
@@ -272,7 +275,7 @@ input[type="number"] {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid #9aa;
+  border: 2px solid #888;
   background: transparent;
   box-sizing: border-box;
   flex: 0 0 16px;
@@ -281,16 +284,16 @@ input[type="number"] {
 /* checked state for the label and the inner dot */
 #tab-map:checked + label[for="tab-map"],
 #tab-term:checked + label[for="tab-term"] {
-  background: rgba(43,102,51,0.12);
-  color: #031;
-  border-color: rgba(26,85,34,0.25);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  background: #2b6;
+  color: #ffffff;
+  border-color: #1a5;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.12);
 }
 
 #tab-map:checked + label[for="tab-map"]::before,
 #tab-term:checked + label[for="tab-term"]::before {
-  background: radial-gradient(circle at center, #031 45%, transparent 46%);
-  border-color: #031;
+  border-color: #ffffff;
+  background: radial-gradient(circle at center, #ffffff 45%, transparent 46%);
 }
 
 /* small hover/focus polish */
