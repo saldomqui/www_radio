@@ -114,12 +114,9 @@ body {
     color: #fff;
 }
 
-/* status bar */
+/* status bar now lives in the grid (do not fix it) */
 #status {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  grid-area: status;
   height: 36px;
   line-height: 36px;       /* vertically center single-line text */
   padding: 0 12px;
@@ -299,8 +296,8 @@ input[type="number"] {
   position: absolute;
   inset: 0;           /* top:0; right:0; bottom:0; left:0; inside main */
   overflow: auto;
-  /* keep some inner breathing room if desired */
-  padding-bottom: 6px; /* prevents content touching status bar */
+  /* no extra bottom padding so panel height matches grid cell exactly */
+  padding-bottom: 0;
 }
 
 /* terminal hidden by default */
