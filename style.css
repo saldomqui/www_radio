@@ -79,14 +79,12 @@ aside#tree {
   aside#tree { border-left: none; border-top: 1px solid rgba(0,0,0,0.06); }
 }
 
+/* global font and background (keep grid layout intact) */
 body {
-    font-family: monospace;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    background: #0b0b0b;
-    color: #eee;
+  font-family: monospace;
+  margin: 0;
+  background: #0b0b0b;
+  color: #eee;
 }
 
 /* controls area: keep items compact and vertically centered */
@@ -306,14 +304,14 @@ input[type="number"] {
 /* keep layout consistent with existing .tabs */
 .tabs { display: inline-flex; gap: 8px; align-items: center; margin-top: 8px; }
 
-/* Map / terminal containers should share the same area */
+/* Map / terminal panels fill the main grid cell.
+   They are positioned relative to <main> (main is position:relative). */
 #map, #terminal {
   position: absolute;
-  left: 0;
-  right: 215px; /* match main margin-right (tree width + gap) */
-  top: 70px;    /* account for header height; adjust if header taller */
-  bottom: 36px; /* account for status bar height */
+  inset: 0;           /* top:0; right:0; bottom:0; left:0; inside main */
   overflow: auto;
+  /* keep some inner breathing room if desired */
+  padding-bottom: 6px; /* prevents content touching status bar */
 }
 
 /* terminal hidden by default */
