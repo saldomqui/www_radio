@@ -22,7 +22,7 @@ main {
     flex: 1;
     overflow: hidden;        /* let map handle its own scrolling */
     position: relative;      /* so #map absolute is contained inside main */
-    margin-right: 200px;     /* reserve space for the right tree (tree width + gap) */
+    margin-right: 170px;     /* reserve space for the right tree (tree width + gap) */
 }
 
 /* full-size map inside main (unchanged) */
@@ -88,7 +88,7 @@ input[type="number"] {
     position: fixed;
     right: 12px;
     top: 72px; /* below header */
-    width: 200px;
+    width: 150px;
     max-height: calc(100vh - 84px);
     overflow: auto;
     background: #0f0f0f;
@@ -125,7 +125,7 @@ input[type="number"] {
 
 /* ensure main area doesn't hide behind the sidebar on smaller screens */
 @media (min-width: 820px) {
-    main { margin-right: 200px; }
+    main { margin-right: 170px; }
 }
 
 /* robot marker (SVG arrow) and ID label */
