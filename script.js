@@ -565,13 +565,13 @@ if ('serial' in navigator) {
     (async () => {
         try {
             const ports = await navigator.serial.getPorts();
-            connectBtn.disabled = !(ports && ports.length > 0);
+            // connectBtn.disabled = !(ports && ports.length > 0);
         } catch (e) {
             console.warn('getPorts failed', e);
         }
     })();
 
-    // // when a device is physically connected (granted by origin previously)
+    // when a device is physically connected (granted by origin previously)
     // navigator.serial.addEventListener('connect', (ev) => {
     //     try {
     //         // enable connect button and ensure label is "Connect" when not currently connected
