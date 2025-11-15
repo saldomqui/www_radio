@@ -4,11 +4,9 @@ let reader = null;
 let writer = null;
 let keepReading = false;
 
-const CONFIG_STR = "#CONFIG,0,2402.5,5,0,LORA,5,1600,5,16\n";
 const RUN_STR = "#RUN\n";
 
 const connectBtn = document.getElementById('connect');
-const disconnectBtn = document.getElementById('disconnect');
 const statusEl = document.getElementById('status');
 const deviceNameEl = document.getElementById('deviceName');
 const baudInput = document.getElementById('baud');
@@ -17,6 +15,11 @@ const tabTerm = document.getElementById('tab-term');
 const mapEl = document.getElementById('map');
 const termEl = document.getElementById('terminal');
 const termContent = document.getElementById('terminalContent');
+
+connectBtn.textContent = 'Connect';
+connectBtn.style.background = '#2b6';
+const settingsBtn = document.getElementById('settings');
+settingsBtn.style.background = 'rgba(23, 149, 180, 1)';
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
@@ -30,11 +33,138 @@ const terminalLines = [];
 tabMap.addEventListener('click', () => showTab('map'));
 tabTerm.addEventListener('click', () => showTab('term'));
 
+// periodic refresher for all progress bars
+(function startProgressRefresher() {
+    const MS_REFRESH = 200;
+    setInterval(() => {
+        if (!statusArray || statusArray.length === 0) return;
+        const now = Date.now();
+        for (let i = 0; i < statusArray.length; ++i) {
+            const s = statusArray[i];
+            const entryEl = document.querySelector(`.tree-entry[data-id="${s.id}"]`);
+            if (!entryEl) continue;
+            const progInner = entryEl._progInner || entryEl.querySelector('.time-progress-inner');
+            if (!progInner) continue;
+            const last = s.tstamp ? (new Date(s.tstamp)).getTime() : now;
+            const elapsed = Math.max(0, now - last);
+            const pct = Math.min(1, elapsed / 5000);
+            progInner.style.width = (pct * 100) + '%';
+        }
+    }, MS_REFRESH);
+})();
+
+// single toggle handler: connect if disconnected, disconnect if connected
+if (connectBtn) {
+    connectBtn.addEventListener('click', async () => {
+        try {
+            if (connectBtn.textContent === 'Disconnect') await disconnect();
+            else await connect();
+        } catch (e) { console.warn('toggle error', e); }
+    });
+}
+
+// current channel variable (default fallback)
+if (typeof window.rfChannel === 'undefined') window.rfChannel = 13;
+
+// show configuration dialog
+settingsBtn.addEventListener('click', () => {
+    showRfChannelDialog(window.rfChannel);
+});
 
 // default
 showTab('map');
 
+
+// show a modal dialog to pick an integer channel 1..500
+function showRfChannelDialog(current = 13) {
+    const dlg = document.createElement('div');
+    dlg.style = 'position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:65536';
+
+    const box = document.createElement('div');
+    box.style = 'background:#0f0f0f;color:#eee;padding:14px;border-radius:8px;min-width:260px;box-shadow:0 6px 18px rgba(0,0,0,0.6)';
+
+    const title = document.createElement('div');
+    title.textContent = 'RF Channel (1 - 500)';
+    title.style = 'font-weight:600;margin-bottom:8px;color:#9ad';
+    box.appendChild(title);
+
+    const row = document.createElement('div');
+    row.style = 'display:flex;gap:8px;align-items:center;';
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '1';
+    input.max = '500';
+    input.value = String(Number(current) || 13);
+    input.style = 'width:100px;padding:6px;border-radius:4px;border:1px solid #333;background:#111;color:#eee';
+    row.appendChild(input);
+
+    const info = document.createElement('div');
+    info.textContent = ''; info.style = 'font-size:12px;color:#9ad;opacity:0.9';
+    row.appendChild(info);
+
+    box.appendChild(row);
+
+    const btnRow = document.createElement('div');
+    btnRow.style = 'display:flex;gap:8px;justify-content:flex-end;margin-top:12px';
+
+    const btnCancel = document.createElement('button');
+    btnCancel.className = 'dialog-button';
+    btnCancel.textContent = 'Cancel';
+    btnCancel.onclick = () => document.body.removeChild(dlg);
+
+    const btnOk = document.createElement('button');
+    btnOk.className = 'dialog-button';
+    btnOk.textContent = 'Save';
+    btnOk.onclick = () => {
+        const v = Number(input.value);
+        if (!Number.isInteger(v) || v < 1 || v > 500) {
+            info.textContent = 'Enter integer between 1 and 500';
+            return;
+        }
+        // update local variable
+        window.rfChannel = v;
+
+        showInfoDialog('Re-plug the radio device and click \"Connect\" for the new channel to take effect.', 'RF Channel Changed');
+
+        document.body.removeChild(dlg);
+    };
+
+    btnRow.appendChild(btnCancel);
+    btnRow.appendChild(btnOk);
+    box.appendChild(btnRow);
+
+    dlg.appendChild(box);
+    document.body.appendChild(dlg);
+
+    // focus input
+    setTimeout(() => input.focus(), 10);
+}
+
+
 function setStatus(s) { if (statusEl) statusEl.textContent = 'status: ' + s; }
+
+window.appendText = function appendText(data, { prefix = '', addNewline = true } = {}) {
+    try {
+        let s;
+        if (data instanceof ArrayBuffer) s = textDecoder.decode(new Uint8Array(data));
+        else if (ArrayBuffer.isView(data)) s = textDecoder.decode(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+        else s = String(data);
+
+        // split incoming text into lines and push each line separately
+        const lines = s.split(/\r?\n/);
+        for (let i = 0; i < lines.length; ++i) {
+            // avoid adding an extra empty line from a trailing newline unless addNewline requested
+            if (lines[i] === '' && i === lines.length - 1 && !addNewline) continue;
+            terminalLines.push(prefix + lines[i]);
+        }
+        while (terminalLines.length > TERMINAL_MAX_LINES) terminalLines.shift();
+        termContent.textContent = terminalLines.join('\n') + (addNewline ? '\n' : '');
+        termContent.scrollTop = termContent.scrollHeight;
+    } catch (e) {
+        console.error('appendText error', e);
+    }
+};
 
 // append bytes (ArrayBuffer / Uint8Array) to terminal in HEX
 window.appendHex = function appendHex(data, { prefix = '', spacer = ' ', addNewline = true } = {}) {
@@ -134,10 +264,13 @@ function computeChecksum(bytes) {
 // Message format: 0xFF, <len:1>, <cmd:1>, <payload: len - 3>, <checksum:2>
 // Only append a message to console if cmd === 0x01 and checksum matches
 async function readLoop() {
+    //console.log("Starting read loop...");
     const buffer = []; // accumulate incoming bytes (numbers 0-255)
     try {
         while (keepReading && reader) {
+            //console.log("Reading chunk...");
             const { value, done } = await reader.read();
+            //console.log("Read chunk:", value);
             if (done) break;
             if (!value || !value.length) continue;
 
@@ -167,7 +300,7 @@ async function readLoop() {
                 const cmd = msgData[0]; // command byte
 
                 // payload must be at least 3 bytes: marker + checksum(2)
-                if (msgData.length >= 3 && cmd === 0x01) {
+                if (msgData.length >= 3) {
                     // data to checksum = msgData[0 .. len-3] (i.e. excluding last two checksum bytes)
                     const payloadSegment = msgData.slice(0, msgData.length - 2);
                     const chkHigh = msgData[msgData.length - 2];
@@ -176,23 +309,78 @@ async function readLoop() {
                     const actual = computeChecksum(payloadSegment);
 
                     if (actual === expected) {
-                        // payloadSegment[0] == 0x01 (marker). The C struct bytes start at payloadSegment[1].
-                        // pass only the struct bytes to parseMessage
-                        const structBytes = Uint8Array.from(payloadSegment.slice(1));
-                        const status = parseMessage(structBytes, 0);
-                        if (status) {
-                            updateStatusArray(status);
-                            //console.log('Updated status id=' + status.id, status);
-                        } else {
-                            console.warn('parseMessage failed for id=', payloadSegment[1]);
+                        //window.appendHex(msgData, { prefix: '' });
+                        switch (cmd) {
+                            case 0x03://Status request message
+                                if (termEl.style.display === 'block') {
+                                    const node_id = (msgData[1] << 8) | msgData[2];
+                                    window.appendText(`STATUS REQUEST ${node_id}\t--->`, { prefix: '' });
+                                }
+                                break;
+                            case 0x01://Status message
+                                // payloadSegment[0] == 0x01 (marker). The C struct bytes start at payloadSegment[1].
+                                // pass only the struct bytes to parseMessage
+                                const structBytes = Uint8Array.from(payloadSegment.slice(1));
+                                const status = parseMessage(structBytes, 0);
+                                if (status) {
+                                    updateStatusArray(status);
+                                }
+
+                                if (termEl.style.display === 'block') {
+                                    window.appendText(`                             <--- ${status.id} STATUS`, { prefix: '' });
+                                }
+                                break;
+                            case 0x04://Status not available response 
+                                if (termEl.style.display === 'block') {
+                                    const node_id = (msgData[1] << 8) | msgData[2];
+                                    window.appendText(`                             <--- ${node_id} STATUS NOT AVAILABLE`, { prefix: '' });
+                                }
+                                break;
+                            case 0x05://Sync transfer request 
+                                if (termEl.style.display === 'block') {
+                                    const node_id = (msgData[1] << 8) | msgData[2];
+                                    window.appendText(`SYNC TRANSF REQ  ${node_id}\t--->`, { prefix: '' });
+                                }
+                                break;
+                            case 0x02://Synchronization message
+                                if (termEl.style.display === 'block') {
+                                    const sync_id = (msgData[1] << 8) | msgData[2];
+                                    window.appendText(`                             <--- ${sync_id} SYNC`, { prefix: '' });
+                                }
+                                break;
+                            case 0x06://Sync transfer ack 
+                                if (termEl.style.display === 'block') {
+                                    window.appendText(`                             <--- SYNC TRANSF ACK`, { prefix: '' });
+                                }
+                                break;
+                            case 0x07://Aux data request 
+                                if (termEl.style.display === 'block') {
+                                    const node_id = (msgData[1] << 8) | msgData[2];
+                                    window.appendText(`AUX DATA REQUEST ${node_id}\t--->`, { prefix: '' });
+                                }
+                                break;
+                            case 0x08://Aux data  ack 
+                                if (termEl.style.display === 'block') {
+                                    window.appendText(`                             <--- AUX DATA ACK`, { prefix: '' });
+                                }
+                                break;
+                            case 0x08://Aux data  
+                                if (termEl.style.display === 'block') {
+                                    window.appendText(`                             <--- AUX DATA`, { prefix: '' });
+                                }
+                                break;
+                            case 0x0A://Aux packet request data  
+                                if (termEl.style.display === 'block') {
+                                    const node_id = (msgData[1] << 8) | msgData[2];
+                                    window.appendText(`AUX DATA REQ ${node_id} PCK ${msgData[5]}\t--->`, { prefix: '' });
+                                }
+                                break;
                         }
                     } else {
                         const actualHex = '0x' + actual.toString(16).padStart(4, '0').toUpperCase();
                         const expectedHex = '0x' + expected.toString(16).padStart(4, '0').toUpperCase();
                         console.warn(`Checksum mismatch for message id=${msgData[1]}: actual=${actualHex} expected=${expectedHex}`);
                     }
-                    if (termEl.style.display === 'block')
-                         window.appendHex(msgData, { prefix: '' });
                 }
 
                 // remove consumed bytes up to end of this message
@@ -208,14 +396,13 @@ async function readLoop() {
     }
 }
 
-
 async function connect() {
     if (!('serial' in navigator)) {
         setStatus('Web Serial not supported. Enable experimental features or use Chromium');
         return;
     }
     try {
-        console.log("Connecting...");
+        console.log("Connecting using RF channel:", window.rfChannel);
         const baudRate = Number(baudInput.value) || 921600;
 
         // user selects port
@@ -227,11 +414,11 @@ async function connect() {
 
         // open port
         await port.open({ baudRate });
+        connectBtn.textContent = 'Disconnect';
+        connectBtn.style.background = '#c44';
 
         //deviceNameEl.textContent = 'connected';
         setStatus(`open @ ${baudRate}`);
-        connectBtn.disabled = true;
-        disconnectBtn.disabled = false;
 
         // Read serial port and check if "#NOT_INITIALIZED" string is on the data read. If so, print on console not initialized, if not print initialized
         textBuffer = '';
@@ -239,6 +426,7 @@ async function connect() {
 
         // temporary reader to check initialization
         const tempReader = port.readable.getReader();
+
         try {
             const initDeadline = Date.now() + 1000; // 1 second to detect
             while (Date.now() < initDeadline) {
@@ -249,6 +437,7 @@ async function connect() {
                     textBuffer += chunk;
                     if (textBuffer.includes('#NOT_INITIALIZED')) {
                         initialized = false;
+                        console.log("Receiver not initialized. Initializing...");
                         break;
                     }
                     // keep buffer bounded
@@ -263,17 +452,24 @@ async function connect() {
         }
 
         if (!initialized) {
+            console.log("Initializing receiver...");
             // prepare writer
             if (port.writable) {
                 writer = port.writable.getWriter();
                 // 1) send CONFIG
+                // center frequency as string with exactly one decimal place
+                const rfFrequencyMHz = (2400.1 + (Number(window.rfChannel) - 1) * 0.2).toFixed(1);
+                const CONFIG_STR = `#CONFIG,0,${rfFrequencyMHz},5,0,LORA,5,1600,5,16\n`;
                 await writeString(CONFIG_STR);
 
                 // 2) wait for "#OK"
+                console.log("Waiting for config ACK...");
                 try {
                     setStatus('waiting for first OK...');
-                    await readUntil('#OK', 200);
+                    let read = await readUntil('#OK', 200);
+                    console.log("Received:", read);
                 } catch (e) {
+                    console.error("Error waiting for config ACK:", e);
                     // cleanup and abort
                     try { await disconnect(); } catch (_) { }
                     return;
@@ -283,17 +479,22 @@ async function connect() {
                 await writeString(RUN_STR);
 
                 // 4) wait for "#OK"
+                console.log("Waiting for run ACK...");
                 try {
                     setStatus('OK received');
-                    await readUntil('#OK', 200);
+                    let read = await readUntil('#OK', 200);
+                    console.log("Received:", read);
                 } catch (e) {
+                    console.error("Error waiting for run ACK:", e);
                     try { await disconnect(); } catch (_) { }
                     return;
                 }
             } else {
+                console.error("Port not writable");
                 setStatus('port not writable');
             }
-
+        } else {
+            console.log("Receiver already initialized.");
         }
 
         // 5) start continuous read loop (message-oriented)
@@ -326,27 +527,92 @@ async function disconnect() {
             port = null;
         }
         setStatus('closed');
+        connectBtn.textContent = 'Connect';
+        connectBtn.style.background = '#2b6';
     } catch (err) {
         console.warn('disconnect error', err);
         setStatus('close error: ' + (err.message || err));
     } finally {
-        connectBtn.disabled = false;
-        disconnectBtn.disabled = true;
         deviceNameEl.textContent = 'Choose device';
+    }
+    // clear all runtime state produced by the session so reconnect starts fresh
+    try {
+        // clear status array
+        statusArray.length = 0;
+        // remove all markers from the map
+        if (map) {
+            for (const m of markers.values()) {
+                try { map.removeLayer(m); } catch (e) { /* ignore */ }
+            }
+        }
+        markers.clear();
+        // remove tree DOM
+        removeTreeContainer();
+        // reset first-location flag so map recenters on next valid position
+        firstLocationSet = false;
+        activeCenteredId = null;
+        // clear terminal content and internal buffer
+        if (typeof termContent !== 'undefined' && termContent) termContent.textContent = '';
+        terminalLines.length = 0;
+    } catch (e) {
+        console.warn('cleanup after disconnect failed', e);
     }
 }
 
-connectBtn.addEventListener('click', connect);
-disconnectBtn.addEventListener('click', disconnect);
+// show available granted ports and react to physical plug/unplug events
+if ('serial' in navigator) {
+    // initial availability
+    (async () => {
+        try {
+            const ports = await navigator.serial.getPorts();
+            connectBtn.disabled = !(ports && ports.length > 0);
+        } catch (e) {
+            console.warn('getPorts failed', e);
+        }
+    })();
 
-// show available granted ports
-(async () => {
-    if (!('serial' in navigator)) return;
-    try {
-        const ports = await navigator.serial.getPorts();
-        if (ports.length > 0) deviceNameEl.textContent = 'Choose device (click Connect)';
-    } catch (e) { /* ignore */ }
-})();
+    // // when a device is physically connected (granted by origin previously)
+    // navigator.serial.addEventListener('connect', (ev) => {
+    //     try {
+    //         // enable connect button and ensure label is "Connect" when not currently connected
+    //         if (connectBtn) {
+    //             connectBtn.disabled = false;
+    //             if (!port) {
+    //                 connectBtn.textContent = 'Connect';
+    //                 connectBtn.style.background = '#2b6';
+    //             }
+    //         }
+    //     } catch (e) { console.warn(e); }
+    // });
+
+    // when a device is physically disconnected
+    navigator.serial.addEventListener('disconnect', (ev) => {
+        try {
+            // if the disconnected port is the one currently open, perform cleanup
+            if (ev && ev.port && port && ev.port === port) {
+                // best-effort cleanup
+                disconnect().catch(() => { });
+            }
+            // disable connect if no granted ports remain
+            (async () => {
+                try {
+                    const ports = await navigator.serial.getPorts();
+                    const has = ports && ports.length > 0;
+                    if (connectBtn) {
+                        connectBtn.disabled = !has;
+                        connectBtn.textContent = 'Connect';
+                        connectBtn.style.background = '#2b6';
+                    }
+                    // clear device label if the disconnected port was the shown device
+                    if (!has && deviceNameEl) deviceNameEl.textContent = 'Choose device';
+                } catch (e) {
+                    console.warn('post-disconnect getPorts failed', e);
+                }
+            })();
+        } catch (e) { console.warn(e); }
+    });
+}
+
 
 /**
  * Parse a status message status data struct.
@@ -376,7 +642,7 @@ function parseMessage(buf, startOffset = 0, littleEndian = true) {
     const rot_speed = (dv.getInt16(off, littleEndian)) / 1000.0; off += 2;
     const drive_mode = dv.getUint8(off); off += 1;
     const aux_data_status = dv.getUint8(off); off += 1;
-
+    const tstamp = new Date();
     return {
         id,
         sync_id,
@@ -389,7 +655,8 @@ function parseMessage(buf, startOffset = 0, littleEndian = true) {
         speed_y,
         rot_speed,
         drive_mode,
-        aux_data_status
+        aux_data_status,
+        tstamp
     };
 }
 
@@ -403,22 +670,87 @@ function ensureTreeContainer() {
         const tree = document.createElement('aside');
         tree.id = 'tree';
         tree.setAttribute('aria-label', 'Robot tree');
-        tree.style.position = 'fixed';
-        tree.style.right = '12px';
-        tree.style.top = '72px';
-        tree.style.width = '260px';
-        tree.style.maxHeight = 'calc(100vh - 84px)';
-        tree.style.overflow = 'auto';
-        tree.style.background = '#0f0f0f';
-        tree.style.border = '1px solid #222';
-        tree.style.borderRadius = '6px';
-        tree.style.padding = '8px';
-        tree.style.color = '#ddd';
-        tree.style.boxShadow = '0 2px 8px rgba(0,0,0,0.6)';
-        const h = document.createElement('h3');
-        h.textContent = 'Robots';
+        // layout constants used to align ticks & bars
+        const AUX_WIDTH = 10;      // px (aux icon)
+        const LABEL_WIDTH = 64;    // px (fixed label width for all entries)
+        const GAP = 8;             // px (gap between header children)
+        const START_OFFSET_PX = (AUX_WIDTH + GAP + LABEL_WIDTH + GAP) + 'px';
+
+        // Header row: title at left, time scale (0s..5s with per-second ticks) fills remaining space
+        const h = document.createElement('div');
+        h.style.display = 'flex';
+        h.style.alignItems = 'center';
         h.style.margin = '0 0 6px 0';
-        h.style.color = '#9ad';
+
+        const title = document.createElement('span');
+        title.textContent = 'Latency:';
+        title.style.color = '#9ad';
+        title.style.fontWeight = '800';
+        title.style.marginRight = '8px';
+        title.style.marginLeft = '20px';
+
+        // scale container matches progress bar width (flex:1) so ticks align with bars
+        const scaleWrap = document.createElement('div');
+        scaleWrap.style.flex = '1 1 auto';
+        scaleWrap.style.display = 'flex';
+        scaleWrap.style.alignItems = 'center';
+        scaleWrap.style.gap = '8px';
+
+        // visual area where ticks are positioned absolutely
+        const scaleArea = document.createElement('div');
+        scaleArea.style.position = 'relative';
+        scaleArea.style.height = '18px';
+        scaleArea.style.flex = '1 1 100%';
+        // pad-left so the 0s tick lines up with the start of each progress bar
+        scaleArea.style.paddingLeft = START_OFFSET_PX;
+
+        // create ticks 0..5 (0s .. 5s) positioned by percent
+        for (let i = 0; i <= 5; ++i) {
+            const pos = (i / 5) * 100;
+            const tick = document.createElement('div');
+            tick.style.position = 'absolute';
+            tick.style.left = pos + '%';
+            tick.style.top = '0';
+            tick.style.transform = 'translateX(-50%)';
+            tick.style.display = 'flex';
+            tick.style.flexDirection = 'column';
+            tick.style.alignItems = 'center';
+            tick.style.fontSize = '0.75em';
+            tick.style.color = '#9ad';
+            tick.style.opacity = '0.9';
+
+            const line = document.createElement('div');
+            line.style.width = '2px';
+            line.style.height = '8px';
+            line.style.background = '#9ad';
+            line.style.marginBottom = '2px';
+
+            const lbl = document.createElement('div');
+            lbl.textContent = i + 's';
+            lbl.style.lineHeight = '1';
+            lbl.style.fontSize = '10px';
+
+            tick.appendChild(line);
+            tick.appendChild(lbl);
+            scaleArea.appendChild(tick);
+        }
+
+        // left "0s" label (redundant with ticks but keeps visual at start)
+        const leftLabel = document.createElement('div');
+        leftLabel.textContent = ''; // ticks include labels
+        leftLabel.style.flex = '0 0 auto';
+
+        // right spacer (if needed)
+        const rightLabel = document.createElement('div');
+        rightLabel.textContent = ''; // ticks include labels
+        rightLabel.style.flex = '0 0 auto';
+
+        scaleWrap.appendChild(leftLabel);
+        scaleWrap.appendChild(scaleArea);
+        scaleWrap.appendChild(rightLabel);
+
+        h.appendChild(title);
+        h.appendChild(scaleWrap);
         tree.appendChild(h);
         container = document.createElement('div');
         container.id = 'treeContent';
@@ -426,6 +758,17 @@ function ensureTreeContainer() {
         document.body.appendChild(tree);
     }
     return container;
+}
+
+function removeTreeContainer() {
+    const container = document.getElementById('treeContent');
+    if (container) {
+        // remove all child nodes
+        while (container.firstChild) container.removeChild(container.firstChild);
+        // remove the aside wrapper if present
+        const aside = document.getElementById('tree');
+        if (aside && aside.parentNode) aside.parentNode.removeChild(aside);
+    }
 }
 
 // render detail HTML for a status object
@@ -442,21 +785,38 @@ function renderStatusDetailsHtml(s) {
     const drive_mode_hex = '0x' + (Number(s.drive_mode) || 0).toString(16).padStart(2, '0').toUpperCase();
     const aux_hex = '0x' + (Number(s.aux_data_status) || 0).toString(16).padStart(2, '0').toUpperCase();
 
+    let aux_data_mode_str;
+    if (s.aux_data_status & 0x01) aux_data_mode_str = 'direct available';
+    else if (s.aux_data_status & 0x02) aux_data_mode_str = 'indirect available';
+    else aux_data_mode_str = 'not available';
+
+    let drive_mode_str = '';
+
+    if (s.drive_mode & 0x01) drive_mode_str = 'auto';
+    else drive_mode_str = 'manual';
+    if (s.drive_mode & 0x02) drive_mode_str += ',sideways';
+    if (s.drive_mode & 0x04) drive_mode_str += ',sel';
+    else drive_mode_str += ',not-sel';
+    if (s.drive_mode & 0x08) drive_mode_str += ',multi';
+    else drive_mode_str += ',single';
+    if (s.drive_mode & 0x10) drive_mode_str += ',bwd';
+    else drive_mode_str += ',fwd';
+
     return `
-    <div style="margin-left:4px; display:grid; grid-template-columns:90px 1fr; gap:3px; font-size:0.9em; color:#bbb;">
-      <div style="text-align:right;padding-right:6px;">sync:</div><div>${sync}</div>
-      <div style="text-align:right;padding-right:6px;">t_off:</div><div>${time_off} ms</div>
-      <div style="text-align:right;padding-right:6px;">lat:</div><div>${lat}</div>
-      <div style="text-align:right;padding-right:6px;">lon:</div><div>${lon}</div>
-      <div style="text-align:right;padding-right:6px;">hdg:</div><div>${heading} rad</div>
-      <div style="text-align:right;padding-right:6px;">cov:</div><div>${cov}</div>
-      <div style="text-align:right;padding-right:6px;">spdX:</div><div>${spdX} mm/s</div>
-      <div style="text-align:right;padding-right:6px;">spdY:</div><div>${spdY} mm/s</div>
-      <div style="text-align:right;padding-right:6px;">rot:</div><div>${rot} mrad/s</div>
-      <div style="text-align:right;padding-right:6px;">mode:</div><div>${drive_mode_hex}</div>
-      <div style="text-align:right;padding-right:6px;">aux:</div><div>${aux_hex}</div>
-    </div>
-  `;
+     <div style="margin-left:4px; display:grid; grid-template-columns:90px 1fr; gap:3px; font-size:0.9em; color:#bbb;">
+       <div style="text-align:right;padding-right:6px;">sync:</div><div>${sync}</div>
+       <div style="text-align:right;padding-right:6px;">t_off:</div><div>${time_off} ms</div>
+       <div style="text-align:right;padding-right:6px;">lat:</div><div>${lat}</div>
+       <div style="text-align:right;padding-right:6px;">lon:</div><div>${lon}</div>
+       <div style="text-align:right;padding-right:6px;">hdg:</div><div>${heading} rad</div>
+       <div style="text-align:right;padding-right:6px;">cov:</div><div>${cov}</div>
+       <div style="text-align:right;padding-right:6px;">spdX:</div><div>${spdX} mm/s</div>
+       <div style="text-align:right;padding-right:6px;">spdY:</div><div>${spdY} mm/s</div>
+       <div style="text-align:right;padding-right:6px;">rot:</div><div>${rot} mrad/s</div>
+       <div style="text-align:right;padding-right:6px;">mode:</div><div>${drive_mode_str}</div>
+       <div style="text-align:right;padding-right:6px;">aux:</div><div>${aux_data_mode_str}</div>
+     </div>
+   `;
 }
 
 // helper: check if map center is within tolMeters of a lat/lon
@@ -511,7 +871,51 @@ function createTreeEntry(s) {
     header.className = 'tree-header';
     header.style.fontWeight = '600';
     header.style.marginBottom = '6px';
-    header.textContent = `ID ${s.id}`;
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.gap = '8px';
+
+    // aux status icon (small circle)
+    const auxIcon = document.createElement('span');
+    auxIcon.className = 'aux-icon';
+    auxIcon.style.display = 'inline-block';
+    auxIcon.style.width = '10px';
+    auxIcon.style.height = '10px';
+    auxIcon.style.borderRadius = '50%';
+    auxIcon.style.flex = '0 0 10px';
+    updateAuxIconElem(auxIcon, s.aux_data_status);
+
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = `ID ${s.id}`;
+    // fixed-width label so all progress bars start at the same horizontal position
+    labelSpan.style.flex = '0 0 64px';
+    labelSpan.style.width = '64px';
+    labelSpan.style.overflow = 'hidden';
+    labelSpan.style.textOverflow = 'ellipsis';
+
+    // progress bar container (green background)
+    const progOuter = document.createElement('div');
+    progOuter.className = 'time-progress-outer';
+    progOuter.style.flex = '1 1 auto';
+    progOuter.style.height = '9px';
+    progOuter.style.background = '#2ecc71'; /* green */
+    progOuter.style.borderRadius = '6px';
+    progOuter.style.overflow = 'hidden';
+    progOuter.style.minWidth = '60px';
+
+    // inner red overlay whose width represents elapsed/5s
+    const progInner = document.createElement('div');
+    progInner.className = 'time-progress-inner';
+    progInner.style.height = '100%';
+    progInner.style.width = '0%';
+    progInner.style.background = '#e74c3c'; /* red */
+    progInner.style.transition = 'width 0.15s linear';
+
+    progOuter.appendChild(progInner);
+
+    header.appendChild(auxIcon);
+    header.appendChild(labelSpan);
+    header.appendChild(progOuter);
     entry.appendChild(header);
 
     const details = document.createElement('div');
@@ -520,12 +924,15 @@ function createTreeEntry(s) {
     details.innerHTML = renderStatusDetailsHtml(s);
     entry.appendChild(details);
 
+    // store quick refs for updates
+    entry._progInner = progInner;
+    entry._header = header;
+
     // toggle on click of header and center map on this robot only when expanding
     header.addEventListener('click', (ev) => {
         ev.stopPropagation();
         s._expanded = !s._expanded;
         details.style.display = s._expanded ? 'block' : 'none';
-        // center map on this robot's marker only when expanded (opening)
         if (s._expanded) centerMapOnId(s.id);
     });
 
@@ -540,15 +947,71 @@ function createTreeEntry(s) {
     return entry;
 }
 
+
+function updateAuxIconElem(elem, aux_status) {
+    if (!elem) return;
+    const s = Number(aux_status) || 0;
+
+    // Direct available -> green
+    if (s & 0x01) {
+        elem.style.backgroundColor = '#2ecc71';
+        elem.title = 'Direct aux: OK';
+    }
+    // Indirect available -> orange
+    else if (s & 0x02) {
+        elem.style.backgroundColor = '#f39c12';
+        elem.title = 'Indirect aux: OK';
+    }
+    // No aux data -> red
+    else {
+        elem.style.backgroundColor = '#e74c3c';
+        elem.title = 'No aux data';
+    }
+
+    // ensure icon sizing/shape if not already set
+    elem.style.display = 'inline-block';
+    elem.style.width = '10px';
+    elem.style.height = '10px';
+    elem.style.borderRadius = '50%';
+}
+
 // update details of existing DOM entry
 function updateTreeEntryDom(s) {
     const container = ensureTreeContainer();
     const el = container.querySelector(`.tree-entry[data-id="${s.id}"]`);
     if (!el) return createTreeEntry(s);
+
     const details = el.querySelector('.tree-details');
     if (details) {
         details.innerHTML = renderStatusDetailsHtml(s);
         details.style.display = s._expanded ? 'block' : 'none';
+    }
+
+    // update aux icon color/title
+    const header = el.querySelector('.tree-header');
+    if (header) {
+        let auxIcon = header.querySelector('.aux-icon');
+        if (!auxIcon) {
+            auxIcon = document.createElement('span');
+            auxIcon.className = 'aux-icon';
+            auxIcon.style.display = 'inline-block';
+            auxIcon.style.width = '10px';
+            auxIcon.style.height = '10px';
+            auxIcon.style.borderRadius = '50%';
+            auxIcon.style.flex = '0 0 10px';
+            header.insertBefore(auxIcon, header.firstChild);
+        }
+        updateAuxIconElem(auxIcon, s.aux_data_status);
+    }
+
+    // update progress bar immediately for this entry
+    const progInner = el._progInner || header.querySelector('.time-progress-inner');
+    if (progInner) {
+        const now = Date.now();
+        const last = s.tstamp ? (new Date(s.tstamp)).getTime() : now;
+        const elapsed = Math.max(0, now - last);
+        const pct = Math.min(1, elapsed / 5000);
+        progInner.style.width = (pct * 100) + '%';
     }
 }
 
@@ -585,7 +1048,6 @@ function updateStatusArray(s) {
         setActiveTreeId(id);
         // update marker on the map for this id
         updateMapMarker(statusArray[idx]);
-        return statusArray[idx];
     } else {
         const entry = Object.assign({}, s);
         entry._expanded = false;
@@ -596,7 +1058,6 @@ function updateStatusArray(s) {
         setActiveTreeId(id);
         // add marker for new entry
         updateMapMarker(entry);
-        return entry;
     }
 }
 
@@ -763,9 +1224,29 @@ async function getPortLabel(port) {
     return 'device';
 }
 
-// Usage (after port = await navigator.serial.requestPort()):
-// const label = await getPortLabel(port);
-// deviceNameEl.textContent = `${label}: connected`;
+
+function showInfoDialog(message, title = 'Info') {
+    const dlg = document.createElement('div');
+    dlg.style = 'position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:65536';
+    const box = document.createElement('div');
+    box.style = 'background:#0f0f0f;color:#eee;padding:14px;border-radius:8px;min-width:260px;box-shadow:0 6px 18px rgba(0,0,0,0.6)';
+    const heading = document.createElement('div');
+    heading.textContent = title;
+    heading.style = 'font-weight:600;margin-bottom:8px;color:#9ad';
+    const msg = document.createElement('div');
+    msg.textContent = message;
+    msg.style = 'margin-bottom:12px';
+    const btn = document.createElement('button');
+    btn.className = 'dialog-button';
+    btn.textContent = 'OK';
+    btn.onclick = () => { document.body.removeChild(dlg); };
+    box.appendChild(heading);
+    box.appendChild(msg);
+    box.appendChild(btn);
+    dlg.appendChild(box);
+    document.body.appendChild(dlg);
+    setTimeout(() => btn.focus(), 10);
+}
 
 // ensure map is initialized once DOM is ready
 document.addEventListener('DOMContentLoaded', () => {

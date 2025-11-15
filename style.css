@@ -1,26 +1,34 @@
 /* ensure box-sizing and full-height viewport */
 *,
 *::before,
-*::after { box-sizing: border-box; }
+*::after {
+  box-sizing: border-box;
+}
 
-html, body {
+html,
+body {
   height: 100%;
   width: 100%;
   margin: 0;
-  overflow: hidden; /* prevent body-level scroll; main will handle internal scrolling */
+  overflow: hidden;
+  /* prevent body-level scroll; main will handle internal scrolling */
 }
 
 /* prevent any horizontal overflow of the whole page */
-html, body {
-  overflow-x: hidden; /* ensure no horizontal scrollbar */
+html,
+body {
+  overflow-x: hidden;
+  /* ensure no horizontal scrollbar */
 }
 
 /* page grid: header (auto) | main (flex) | status (auto) ; tree is right column */
 body {
   display: grid;
   /* left column is fluid, right column is the tree with fixed width */
-  grid-template-columns: 1fr 300px; /* change 300px to desired tree width */
-  grid-template-rows: auto 1fr auto;               /* header | main (fills) | status */
+  grid-template-columns: 1fr 300px;
+  /* change 300px to desired tree width */
+  grid-template-rows: auto 1fr auto;
+  /* header | main (fills) | status */
   grid-template-areas:
     "header header"
     "main   tree"
@@ -34,9 +42,11 @@ body {
 main {
   grid-area: main;
   position: relative;
-  min-width: 0;      /* allow shrinking inside grid */
+  min-width: 0;
+  /* allow shrinking inside grid */
   min-height: 0;
-  overflow: hidden;  /* panels inside handle their own scrolling */
+  overflow: hidden;
+  /* panels inside handle their own scrolling */
 }
 
 /* tree occupies the right column and has fixed width from grid-template-columns */
@@ -49,10 +59,14 @@ aside#tree {
 }
 
 /* contain panels so they can't force page width/height */
-main, #panels, #map-panel, #term-panel {
+main,
+#panels,
+#map-panel,
+#term-panel {
   min-width: 0;
   max-width: 100vw;
-  overflow: hidden; /* panels manage their own scrolling */
+  overflow: hidden;
+  /* panels manage their own scrolling */
   box-sizing: border-box;
 }
 
@@ -60,21 +74,43 @@ main, #panels, #map-panel, #term-panel {
 header {
   grid-area: header;
   z-index: 10;
-  display: flex;               /* single-row header */
+  display: flex;
+  /* single-row header */
   align-items: center;
-  justify-content: space-between; /* left controls / right tabs */
+  justify-content: space-between;
+  /* left controls / right tabs */
   gap: 12px;
   padding: 8px 12px;
-  flex-wrap: nowrap;           /* keep controls and tabs on one line */
+  flex-wrap: nowrap;
+  /* keep controls and tabs on one line */
 }
-main   { grid-area: main; position: relative; overflow: hidden; min-width: 0; }
-aside#tree { grid-area: tree; overflow: auto; min-width: 0; }
-#status { grid-area: status; }
+
+main {
+  grid-area: main;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+aside#tree {
+  grid-area: tree;
+  overflow: auto;
+  min-width: 0;
+}
+
+#status {
+  grid-area: status;
+}
 
 /* make the map/terminal panels fill the main cell and scroll internally */
-#map, #terminal, #map-panel, #term-panel, #panels {
+#map,
+#terminal,
+#map-panel,
+#term-panel,
+#panels {
   position: absolute;
-  inset: 0;      /* top:0; right:0; bottom:0; left:0; inside main */
+  inset: 0;
+  /* top:0; right:0; bottom:0; left:0; inside main */
   width: 100%;
   height: 100%;
   box-sizing: border-box;
@@ -92,7 +128,9 @@ aside#tree { grid-area: tree; overflow: auto; min-width: 0; }
 }
 
 /* internal content inside main should be allowed to scroll */
-main > * { height: 100%; }
+main>* {
+  height: 100%;
+}
 
 /* small screens: stack tree under main */
 @media (max-width: 900px) {
@@ -104,8 +142,16 @@ main > * { height: 100%; }
       "tree"
       "status";
   }
-  header { flex-wrap: wrap; justify-content: flex-start; }
-  aside#tree { border-left: none; border-top: 1px solid rgba(0,0,0,0.06); }
+
+  header {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  aside#tree {
+    border-left: none;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+  }
 }
 
 /* global font and background (keep grid layout intact) */
@@ -121,8 +167,10 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0;                /* remove extra margins */
-  flex: 0 1 auto;          /* allow controls to shrink if needed */
+  margin: 0;
+  /* remove extra margins */
+  flex: 0 1 auto;
+  /* allow controls to shrink if needed */
 }
 
 /* tabs should sit at the right side of the header */
@@ -130,7 +178,8 @@ body {
   margin: 0;
   margin-left: 12px;
   align-items: center;
-  flex: 0 0 auto;           /* don't grow, stay at right */
+  flex: 0 0 auto;
+  /* don't grow, stay at right */
   display: inline-flex;
 }
 
@@ -139,29 +188,31 @@ body {
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  margin: 0;        /* remove extra top margin that added height */
-  max-width: 60vw;  /* avoid extreme width; adjust as needed */
-  overflow-x: auto; /* allow tabs to scroll horizontally if too many */
+  margin: 0;
+  /* remove extra top margin that added height */
+  max-width: 60vw;
+  /* avoid extreme width; adjust as needed */
+  overflow-x: auto;
+  /* allow tabs to scroll horizontally if too many */
   -webkit-overflow-scrolling: touch;
   box-sizing: border-box;
 }
 
 /* full-size map inside main (unchanged) */
 #map {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .btn {
-    background: #2b6;
-    border: 0;
-    color: #031;
-    padding: 6px 10px;
-    cursor: pointer;
-    border-radius: 4px;
+  border: 0;
+  color: #031;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 4px;
 }
 
 /* disabled appearance for .btn */
@@ -169,30 +220,26 @@ body {
 .btn[disabled],
 .btn.disabled,
 .btn[aria-disabled="true"] {
-    background: #777 !important;
-    color: #eee !important;
-    opacity: 0.75;
-    cursor: not-allowed;
-    pointer-events: none;
-    box-shadow: none;
-    border: 1px solid #666;
-}
-
-.btn.danger {
-    background: #c44;
-    color: #fff;
+  background: #777 !important;
+  color: #eee !important;
+  opacity: 0.75;
+  cursor: not-allowed;
+  pointer-events: none;
+  box-shadow: none;
+  border: 1px solid #666;
 }
 
 /* status bar now lives in the grid (do not fix it) */
 #status {
   grid-area: status;
   height: 36px;
-  line-height: 36px;       /* vertically center single-line text */
+  line-height: 36px;
+  /* vertically center single-line text */
   padding: 0 12px;
   background: #222;
   color: #eee;
   font-size: 14px;
-  box-shadow: 0 -1px 6px rgba(0,0,0,0.35);
+  box-shadow: 0 -1px 6px rgba(0, 0, 0, 0.35);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -201,12 +248,12 @@ body {
 }
 
 input[type="number"] {
-    width: 120px;
-    padding: 6px;
-    border-radius: 4px;
-    border: 1px solid #333;
-    background: #070707;
-    color: #fff;
+  width: 120px;
+  padding: 6px;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #070707;
+  color: #fff;
 }
 
 /* right sidebar tree (use grid placement instead of fixed positioning) */
@@ -227,31 +274,33 @@ input[type="number"] {
 }
 
 #tree h3 {
-    margin: 0 0 6px 0;
-    font-size: 0.95rem;
-    color: #9ad;
+  margin: 0 0 6px 0;
+  font-size: 0.95rem;
+  color: #9ad;
 }
 
 #treeContent ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
 #treeContent li {
-    padding: 6px 8px;
-    border-bottom: 1px solid #111;
-    font-size: 0.9rem;
-    cursor: default;
+  padding: 6px 8px;
+  border-bottom: 1px solid #111;
+  font-size: 0.9rem;
+  cursor: default;
 }
 
 #treeContent li:hover {
-    background: #161616;
+  background: #161616;
 }
 
 /* remove manual main right-margin that compensated for the fixed sidebar */
 @media (min-width: 820px) {
-  main { margin-right: 0; }
+  main {
+    margin-right: 0;
+  }
 }
 
 /* robot marker (SVG arrow) and ID label */
@@ -259,18 +308,21 @@ input[type="number"] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  pointer-events: none; /* let clicks pass to Leaflet marker */
+  pointer-events: none;
+  /* let clicks pass to Leaflet marker */
   transform-origin: center center;
 }
+
 .robot-marker svg {
   width: 28px;
   height: 28px;
   display: block;
   /* arrow will be rotated by inline style on the svg element */
 }
+
 .robot-label {
   color: #fff;
-  background: rgba(0,0,0,0.45);
+  background: rgba(0, 0, 0, 0.45);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
@@ -285,6 +337,7 @@ input[type="number"] {
   gap: 8px;
   margin: 8px 0 0 0;
 }
+
 .tab-btn {
   background: #fff;
   border: 1px solid #ccc;
@@ -293,20 +346,29 @@ input[type="number"] {
   cursor: pointer;
   font-size: 14px;
 }
+
 .tab-btn[aria-selected="true"],
 .tab-btn.active {
   background: #2b6;
   color: #031;
   border-color: #1a5;
 }
+
 .tab-btn[aria-selected="false"] {
   opacity: 0.9;
 }
 
 /* radio-tab styling */
-.tabs { display: inline-flex; gap: 8px; align-items: center; margin-top: 8px; }
+.tabs {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
 
-.tabs input[name="viewtab"] { display: none; }
+.tabs input[name="viewtab"] {
+  display: none;
+}
 
 .tabs .tab {
   display: inline-flex;
@@ -315,7 +377,8 @@ input[type="number"] {
   padding: 6px 12px;
   border-radius: 8px;
   background: transparent;
-  color: #e6e6e6; /* brighter on dark background */
+  color: #e6e6e6;
+  /* brighter on dark background */
   cursor: pointer;
   user-select: none;
   font-size: 14px;
@@ -335,16 +398,16 @@ input[type="number"] {
 }
 
 /* checked state for the label and the inner dot */
-#tab-map:checked + label[for="tab-map"],
-#tab-term:checked + label[for="tab-term"] {
+#tab-map:checked+label[for="tab-map"],
+#tab-term:checked+label[for="tab-term"] {
   background: #2b6;
   color: #ffffff;
   border-color: #1a5;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
 }
 
-#tab-map:checked + label[for="tab-map"]::before,
-#tab-term:checked + label[for="tab-term"]::before {
+#tab-map:checked+label[for="tab-map"]::before,
+#tab-term:checked+label[for="tab-term"]::before {
   border-color: #ffffff;
   background: radial-gradient(circle at center, #ffffff 45%, transparent 46%);
 }
@@ -353,24 +416,33 @@ input[type="number"] {
 .tabs .tab:hover,
 .tabs .tab:focus {
   transform: translateY(-1px);
-  border-color: rgba(255,255,255,0.04);
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
 /* keep layout consistent with existing .tabs */
-.tabs { display: inline-flex; gap: 8px; align-items: center; margin-top: 8px; }
+.tabs {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
 
 /* Map / terminal panels fill the main grid cell.
    They are positioned relative to <main> (main is position:relative). */
-#map, #terminal {
+#map,
+#terminal {
   position: absolute;
-  inset: 0;           /* top:0; right:0; bottom:0; left:0; inside main */
+  inset: 0;
+  /* top:0; right:0; bottom:0; left:0; inside main */
   overflow: auto;
   /* no extra bottom padding so panel height matches grid cell exactly */
   padding-bottom: 0;
 }
 
 /* terminal hidden by default */
-.hidden { display: none; }
+.hidden {
+  display: none;
+}
 
 /* terminal styling */
 #terminal {
@@ -379,6 +451,7 @@ input[type="number"] {
   padding: 12px;
   box-sizing: border-box;
 }
+
 .terminal-pre {
   margin: 0;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -392,12 +465,19 @@ input[type="number"] {
 
 /* enforce: no scrollbars on map, vertical-only on terminal */
 #map {
-  overflow: hidden !important;     /* no scrollbars, Leaflet handles panning */
+  overflow: hidden !important;
+  /* no scrollbars, Leaflet handles panning */
   -webkit-overflow-scrolling: auto;
   /* hide any browser scrollbar visuals just in case */
-  scrollbar-width: none; /* Firefox */
+  scrollbar-width: none;
+  /* Firefox */
 }
-#map::-webkit-scrollbar { display: none; } /* WebKit browsers */
+
+#map::-webkit-scrollbar {
+  display: none;
+}
+
+/* WebKit browsers */
 
 /* terminal: vertical scroll only, prevent horizontal overflow */
 #terminal {
@@ -407,11 +487,42 @@ input[type="number"] {
 }
 
 /* ensure inner content does not force horizontal scrolling */
-#terminal, #terminal * {
+#terminal,
+#terminal * {
   box-sizing: border-box;
   max-width: 100%;
   word-break: break-word;
 }
 
 /* ensure map container displays when active */
-#map { display: block; }
+#map {
+  display: block;
+}
+
+/* On narrow / portrait mobile screens keep main at most 50% of viewport height */
+@media (max-width: 600px), (max-device-width: 768px) and (orientation: portrait) {
+  /* constrain the grid's main row to at most 50vh */
+  body {
+    grid-template-rows: auto minmax(0, 50vh) auto;
+  }
+
+  /* make main itself scrollable if its content exceeds 50vh */
+  main {
+    max-height: 50vh;
+    height: auto;
+    overflow-y: auto;
+  }
+
+  /* panels (map/terminal) fill main but won't grow beyond it;
+     map keeps its overflow hidden, terminal can scroll vertically */
+  #map, #terminal, #map-panel, #term-panel, #panels {
+    position: relative;
+    height: 100%;
+    max-height: 50vh;
+    overflow: hidden;
+  }
+  #terminal {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
