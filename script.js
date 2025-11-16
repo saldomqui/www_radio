@@ -4,6 +4,8 @@ let reader = null;
 let writer = null;
 let keepReading = false;
 
+const RAD2DEG = 180.0 / Math.PI;
+
 const RUN_STR = "#RUN\n";
 
 const connectBtn = document.getElementById('connect');
@@ -15,6 +17,7 @@ const tabTerm = document.getElementById('tab-term');
 const mapEl = document.getElementById('map');
 const termEl = document.getElementById('terminal');
 const termContent = document.getElementById('terminalContent');
+let mapRadar = null;
 
 connectBtn.textContent = 'Connect';
 connectBtn.style.background = '#2b6';
@@ -29,6 +32,9 @@ let runSent = false;
 // terminal line buffer (oldest removed when limit exceeded)
 const TERMINAL_MAX_LINES = 100;
 const terminalLines = [];
+
+// In-memory list of status_payload objects (one element per robot id)
+const statusArray = [];
 
 tabMap.addEventListener('click', () => showTab('map'));
 tabTerm.addEventListener('click', () => showTab('term'));
@@ -50,6 +56,7 @@ tabTerm.addEventListener('click', () => showTab('term'));
             const pct = Math.min(1, elapsed / 5000);
             progInner.style.width = (pct * 100) + '%';
         }
+        if (activeCenteredId) updateMapRadar();
     }, MS_REFRESH);
 })();
 
@@ -643,6 +650,25 @@ function parseMessage(buf, startOffset = 0, littleEndian = true) {
     const drive_mode = dv.getUint8(off); off += 1;
     const aux_data_status = dv.getUint8(off); off += 1;
     const tstamp = new Date();
+    let distance = 0.0;
+    let angle = 0.0;
+    let xy = { x: 0.0, y: 0.0 };
+
+    if (activeCenteredId) {
+        //get latlng of activeCenteredId
+        const m = markers.get(Number(activeCenteredId));
+        if (m) {
+            const latlngCenter = m.getLatLng();
+            if (latlngCenter) {
+                const latlng = L.latLng(latitude, longitude);
+
+                // Compute distance between latlng and current status position
+                distance = latlngCenter.distanceTo(latlngCenter, latlng);
+                xy = latLngToRobotXY(latlngCenter.lat, latlngCenter.lng, latitude, longitude, heading * Math.PI / 180);
+            }
+        }
+    }
+
     return {
         id,
         sync_id,
@@ -656,12 +682,32 @@ function parseMessage(buf, startOffset = 0, littleEndian = true) {
         rot_speed,
         drive_mode,
         aux_data_status,
-        tstamp
+        tstamp,
+        distance,
+        angle,
+        xy
     };
 }
 
-// In-memory list of status_payload objects (one element per robot id)
-const statusArray = [];
+function latLngToRobotXY(lat0, lon0, lat1, lon1, headingRad) {
+    const R = 6371000; // earth radius (m)
+    const toRad = Math.PI / 180;
+    const dLat = (lat1 - lat0) * toRad;
+    const dLon = (lon1 - lon0) * toRad;
+    const meanLat = (lat0 + lat1) * 0.5 * toRad;
+
+    // delta in global East/North (meters)
+    const dNorth = dLat * R;
+    const dEast = dLon * R * Math.cos(meanLat);
+
+    // robot x unit in global ENU: [cosθ, sinθ], y unit: [-sinθ, cosθ]
+    const cosH = Math.cos(headingRad), sinH = Math.sin(headingRad);
+
+    const x = dEast * cosH + dNorth * sinH;          // forward (m)
+    const y = -dEast * sinH + dNorth * cosH;         // left  (m)
+    return { x, y };
+}
+
 
 // helper: ensure tree container exists
 function ensureTreeContainer() {
@@ -784,6 +830,8 @@ function renderStatusDetailsHtml(s) {
     const time_off = (typeof s.time_offset_ms !== 'undefined') ? s.time_offset_ms : 'N/A';
     const drive_mode_hex = '0x' + (Number(s.drive_mode) || 0).toString(16).padStart(2, '0').toUpperCase();
     const aux_hex = '0x' + (Number(s.aux_data_status) || 0).toString(16).padStart(2, '0').toUpperCase();
+    const distance = (typeof s.distance !== 'undefined') ? s.distance : 0.0;
+    const angle = (RAD2DEG * Math.atan2(s.xy.y, s.xy.x)).toFixed(1);
 
     let aux_data_mode_str;
     if (s.aux_data_status & 0x01) aux_data_mode_str = 'direct available';
@@ -803,20 +851,166 @@ function renderStatusDetailsHtml(s) {
     else drive_mode_str += ',fwd';
 
     return `
-     <div style="margin-left:4px; display:grid; grid-template-columns:90px 1fr; gap:3px; font-size:0.9em; color:#bbb;">
+     <div style="margin-left:4px; display:grid; grid-template-columns:110px 1fr; gap:3px; font-size:0.9em; color:#bbb;">
        <div style="text-align:right;padding-right:6px;">sync:</div><div>${sync}</div>
        <div style="text-align:right;padding-right:6px;">t_off:</div><div>${time_off} ms</div>
        <div style="text-align:right;padding-right:6px;">lat:</div><div>${lat}</div>
        <div style="text-align:right;padding-right:6px;">lon:</div><div>${lon}</div>
-       <div style="text-align:right;padding-right:6px;">hdg:</div><div>${heading} rad</div>
+       <div style="text-align:right;padding-right:6px;">hdg:</div><div>${heading} deg</div>
        <div style="text-align:right;padding-right:6px;">cov:</div><div>${cov}</div>
        <div style="text-align:right;padding-right:6px;">spdX:</div><div>${spdX} mm/s</div>
        <div style="text-align:right;padding-right:6px;">spdY:</div><div>${spdY} mm/s</div>
        <div style="text-align:right;padding-right:6px;">rot:</div><div>${rot} mrad/s</div>
        <div style="text-align:right;padding-right:6px;">mode:</div><div>${drive_mode_str}</div>
        <div style="text-align:right;padding-right:6px;">aux:</div><div>${aux_data_mode_str}</div>
+       <div style="text-align:right;padding-right:6px;">polar pos:</div><div>d: ${distance.toFixed(1)} m, a: ${angle} deg</div>
+       <div style="text-align:right;padding-right:6px;">XY pos:</div><div>X: ${s.xy.x.toFixed(1)}, Y: ${s.xy.y.toFixed(1)} m</div>
      </div>
    `;
+}
+
+
+// create a small radar SVG overlay inside the map element (bottom-left)
+function createMapRadar() {
+    if (!mapEl) return;
+    if (mapRadar) return; // already created
+    const wrap = document.createElement('div');
+    wrap.id = 'map-radar-wrap';
+    wrap.style.position = 'absolute';
+    wrap.style.left = '12px';
+    wrap.style.bottom = '12px';
+    wrap.style.width = '220px';
+    wrap.style.height = '220px';
+    wrap.style.background = 'rgba(10,10,12,0.65)';
+    wrap.style.border = '1px solid rgba(150,170,190,0.12)';
+    wrap.style.borderRadius = '8px';
+    wrap.style.padding = '8px';
+    wrap.style.boxSizing = 'border-box';
+    wrap.style.zIndex = 650; // above map tiles
+    wrap.style.pointerEvents = 'none'; // allow clicks to pass through
+    // title
+    const title = document.createElement('div');
+    title.textContent = 'Radar';
+    title.style.color = '#9ad';
+    title.style.fontSize = '12px';
+    title.style.fontWeight = '700';
+    title.style.marginBottom = '6px';
+    title.style.pointerEvents = 'none';
+    wrap.appendChild(title);
+
+    const svgNS = "http://www.w3.org/2000/svg";
+    const size = 180;
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', String(size));
+    svg.setAttribute('height', String(size));
+    svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+    svg.style.display = 'block';
+    svg.style.pointerEvents = 'none';
+    wrap.appendChild(svg);
+
+    mapEl.appendChild(wrap);
+    mapRadar = { wrap, svg, size };
+    // initial draw
+    updateMapRadar();
+}
+
+// update map radar drawing using statusArray entries (assumes s.xy = {x,y} meters)
+function updateMapRadar() {
+    if (!mapRadar) return;
+    const svg = mapRadar.svg;
+    const size = mapRadar.size;
+    const center = size / 2;
+    const margin = 8;
+    const maxR = center - margin;
+
+    // compute max distance among statuses (use status.distance if available or compute from xy)
+    let maxDist = 0;
+    for (const s of statusArray) {
+        const d = Number(s.distance || Math.hypot(s.xy?.x || 0, s.xy?.y || 0)) || 0;
+        if (d > maxDist) maxDist = d;
+    }
+    let outerMeters = Math.max(10, maxDist + 10);
+    outerMeters = Math.ceil(outerMeters / 5) * 5; // round up to multiple of 5
+
+    const pxPerM = maxR / outerMeters;
+
+    // clear
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    const create = (name, attrs = {}) => {
+        const el = document.createElementNS(svg.namespaceURI, name);
+        Object.keys(attrs).forEach(k => el.setAttribute(k, attrs[k]));
+        return el;
+    };
+
+    // axes
+    svg.appendChild(create('line', { x1: center, y1: center - maxR, x2: center, y2: center + maxR, stroke: '#9aa', 'stroke-width': 1 }));
+    svg.appendChild(create('line', { x1: center - maxR, y1: center, x2: center + maxR, y2: center, stroke: '#9aa', 'stroke-width': 1 }));
+
+    // diagonals
+    svg.appendChild(create('line', { x1: center - maxR, y1: center - maxR, x2: center + maxR, y2: center + maxR, stroke: '#667', 'stroke-width': 1, 'stroke-dasharray': '3 3' }));
+    svg.appendChild(create('line', { x1: center - maxR, y1: center + maxR, x2: center + maxR, y2: center - maxR, stroke: '#667', 'stroke-width': 1, 'stroke-dasharray': '3 3' }));
+
+    // circles and axis labels (skip horizontal labels for min/max as requested elsewhere)
+    for (let i = 1; i <= 4; i++) {
+        const rMeters = (outerMeters * i) / 4.0;
+        const rPx = rMeters * pxPerM;
+        const circle = create('circle', { cx: center, cy: center, r: String(rPx), stroke: i === 4 ? '#9ad' : '#4a6', 'stroke-width': i === 4 ? 1.5 : 1, fill: 'none', opacity: 0.9 });
+        svg.appendChild(circle);
+
+        // top (X positive) and bottom (X negative) labels
+        const labelStyle = 'font-size:10px;fill:#9ad';
+        const top = create('text', { x: center + 4, y: center - rPx - 4, style: labelStyle });
+        top.textContent = `${Math.round(rMeters)} m`;
+        svg.appendChild(top);
+        const bot = create('text', { x: center + 4, y: center + rPx + 12, style: labelStyle });
+        bot.textContent = `-${Math.round(rMeters)} m`;
+        svg.appendChild(bot);
+
+        // left/right labels (skip for i===1 and i===4 as requested)
+        if (i !== 1 && i !== 4) {
+            const left = create('text', { x: center - rPx - 30, y: center + 4, style: labelStyle });
+            left.textContent = `${Math.round(rMeters)} m`;
+            svg.appendChild(left);
+            const right = create('text', { x: center + rPx + 6, y: center + 4, style: labelStyle });
+            right.textContent = `-${Math.round(rMeters)} m`;
+            svg.appendChild(right);
+        }
+    }
+
+    // angle labels every 30 deg except 90 and 270
+    for (let ang = 0; ang < 360; ang += 30) {
+        if (ang === 90 || ang === 270) continue;
+        const mathRad = (90 + ang) * Math.PI / 180;
+        const x = center + Math.cos(mathRad) * maxR;
+        const y = center - Math.sin(mathRad) * maxR;
+        const lbl = create('text', { x: x, y: y, style: 'font-size:10px;fill:#9ad', 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+        lbl.textContent = `${ang}°`;
+        svg.appendChild(lbl);
+    }
+
+    // plot robots from statusArray (X forward -> up, Y left -> left)
+    for (const s of statusArray) {
+        if (!s || !s.xy) continue;
+        const rx = Number(s.xy.x || 0);
+        const ry = Number(s.xy.y || 0);
+        const px = center - (ry * pxPerM);
+        const py = center - (rx * pxPerM);
+        const g = create('g', {});
+        const dot = create('circle', { cx: px, cy: py, r: 4, fill: '#ffcc00', stroke: '#000', 'stroke-width': 0.6 });
+        g.appendChild(dot);
+        const txt = create('text', { x: px + 8, y: py - 6, style: 'font-size:10px;fill:#fff;pointer-events:none' });
+        txt.textContent = `${s.id}`;
+        g.appendChild(txt);
+        svg.appendChild(g);
+    }
+}
+
+// clear radar (used on disconnect)
+function clearMapRadar() {
+    if (!mapRadar) return;
+    const svg = mapRadar.svg;
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
 }
 
 // helper: check if map center is within tolMeters of a lat/lon
@@ -1111,6 +1305,8 @@ function initMap() {
         subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
         id: 'mapbox.satellite',
     }).addTo(map);
+
+    createMapRadar();
 }
 
 // helper to create a DivIcon with rotated arrow + ID label
@@ -1169,9 +1365,27 @@ function updateMapMarker(s) {
         m.on('popupclose', () => {
             if (activeCenteredId === Number(s.id)) activeCenteredId = null;
         });
+
+        // clicking the marker sets activeCenteredId (and centers + opens popup)
+        m.on('click', () => {
+            try {
+                activeCenteredId = Number(s.id);
+                if (m.getPopup()) m.openPopup();
+                if (!isMapCenteredAt(lat, lon, 2)) map.setView([lat, lon], map.getZoom(), { animate: true });
+            } catch (e) { /* ignore */ }
+        });
     } else {
         m.setLatLng([lat, lon]);
         m.setIcon(icon);
+        // ensure click handler exists/updated for existing markers as well
+        try {
+            m.off('click');
+            m.on('click', () => {
+                activeCenteredId = Number(s.id);
+                if (m.getPopup()) m.openPopup();
+                if (!isMapCenteredAt(lat, lon, 2)) map.setView([lat, lon], map.getZoom(), { animate: true });
+            });
+        } catch (e) { /* ignore */ }
     }
 
     // If this id is the active centered one, snap/map.setView to keep it centered (immediate)
